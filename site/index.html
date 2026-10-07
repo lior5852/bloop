@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>BLOOP — Get paid to go 🚽</title>
+<meta name="description" content="BLOOP tracks how much money you earn on every bathroom break at work. Fun, free, and coming soon to the App Store." />
+<meta property="og:title" content="BLOOP — Get paid to go 🚽" />
+<meta property="og:description" content="Every bathroom break = money. Track it. Flex it. Coming soon to the App Store." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<style>
+  :root {
+    --cream: #FDF3E3;
+    --orange: #F4772E;
+    --orange-deep: #E05F16;
+    --teal: #2BBFA4;
+    --ink: #1B1511;
+    --white: #FFFDF8;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Baloo 2", -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--cream);
+    color: var(--ink);
+    line-height: 1.5;
+    overflow-x: hidden;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 22px; }
+  .sticker {
+    background: var(--white);
+    border: 3px solid var(--ink);
+    border-radius: 22px;
+    box-shadow: 7px 7px 0 var(--ink);
+  }
+
+  header { padding: 20px 0; }
+  .nav { display: flex; align-items: center; justify-content: space-between; }
+  .logo-badge {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: var(--orange); border: 3px solid var(--ink); border-radius: 16px;
+    padding: 6px 16px; box-shadow: 4px 4px 0 var(--ink);
+    font-weight: 800; font-size: 22px; letter-spacing: 1px; color: var(--white);
+  }
+  .nav a.cta {
+    background: var(--ink); color: var(--cream); text-decoration: none;
+    padding: 10px 20px; border-radius: 14px; font-weight: 700; font-size: 15px;
+    border: 3px solid var(--ink);
+  }
+
+  .hero { text-align: center; padding: 48px 0 30px; }
+  h1 {
+    font-size: clamp(44px, 8vw, 76px); font-weight: 800; line-height: 1.0;
+    text-transform: uppercase; letter-spacing: -1px;
+  }
+  h1 .o { color: var(--orange); -webkit-text-stroke: 2px var(--ink); }
+  .sub { font-size: clamp(17px, 2.4vw, 20px); font-weight: 600; max-width: 540px; margin: 16px auto 0; color: #4a4038; }
+
+  .mascot { margin: 34px auto 6px; width: 150px; height: 150px; background: var(--orange);
+    border: 4px solid var(--ink); border-radius: 36px; box-shadow: 8px 8px 0 var(--ink);
+    display: flex; align-items: center; justify-content: center; position: relative;
+    animation: wiggle 3s ease-in-out infinite;
+  }
+  @keyframes wiggle { 0%,100% { transform: rotate(-3deg);} 50% { transform: rotate(3deg);} }
+  .roll { width: 96px; height: 86px; background: var(--white); border: 4px solid var(--ink); border-radius: 20px; position: relative; }
+  .roll .tube { position: absolute; right: 10px; top: 10px; width: 26px; height: 26px; border: 4px solid var(--ink); border-radius: 50%; background: var(--white); }
+  .roll .tube::after { content: ""; position: absolute; inset: 6px; border-radius: 50%; background: var(--ink); opacity: .85; }
+  .roll .eye { position: absolute; left: 16px; top: 26px; width: 9px; height: 9px; background: var(--ink); border-radius: 50%; }
+  .roll .wink { position: absolute; left: 34px; top: 28px; width: 14px; height: 7px; border-bottom: 4px solid var(--ink); border-radius: 0 0 10px 10px; }
+  .roll .smile { position: absolute; left: 20px; bottom: 14px; width: 26px; height: 12px; border-bottom: 4px solid var(--ink); border-radius: 0 0 14px 14px; }
+  .roll .paper { position: absolute; left: -4px; bottom: -26px; width: 30px; height: 26px; background: var(--white); border: 4px solid var(--ink); border-top: none; border-radius: 0 0 8px 8px; }
+
+  .badges { margin-top: 30px; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .badge-dark {
+    display: inline-flex; align-items: center; background: var(--ink); color: var(--cream);
+    border-radius: 14px; padding: 11px 20px; font-weight: 700; font-size: 15px;
+    border: 3px solid var(--ink); box-shadow: 4px 4px 0 rgba(27,21,17,.25);
+  }
+  .badge-orange {
+    display: inline-flex; align-items: center; gap: 8px; text-decoration: none;
+    background: var(--orange); color: var(--white); border: 3px solid var(--ink);
+    border-radius: 14px; padding: 11px 20px; font-weight: 800; font-size: 15px;
+    box-shadow: 4px 4px 0 var(--ink); transition: transform .1s;
+  }
+  .badge-orange:active { transform: translate(3px,3px); box-shadow: 1px 1px 0 var(--ink); }
+
+  .ticker { margin: 40px auto 0; max-width: 400px; overflow: hidden; }
+  .ticker .head { background: var(--orange); border-bottom: 3px solid var(--ink); padding: 10px; font-weight: 800; color: var(--white); text-transform: uppercase; letter-spacing: 1.5px; font-size: 13px; }
+  .ticker .body { padding: 22px; text-align: center; }
+  .t-time { font-size: 46px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .t-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #8a7b6d; margin-top: 10px; }
+  .t-money { font-size: 42px; font-weight: 800; color: var(--teal); font-variant-numeric: tabular-nums; }
+  .t-hint { font-size: 13px; font-weight: 600; color: #8a7b6d; margin-top: 8px; }
+
+  section.features { padding: 64px 0 10px; }
+  h2 { font-size: clamp(28px, 4.5vw, 38px); font-weight: 800; text-align: center; text-transform: uppercase; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 22px; margin-top: 32px; }
+  .card { padding: 24px; }
+  .card .ic {
+    width: 54px; height: 54px; display: flex; align-items: center; justify-content: center;
+    font-size: 26px; background: var(--cream); border: 3px solid var(--ink); border-radius: 14px;
+  }
+  .card.c-orange .ic { background: var(--orange); }
+  .card.c-teal .ic { background: var(--teal); }
+  .card h3 { font-size: 19px; font-weight: 800; margin-top: 14px; }
+  .card p { font-size: 15px; font-weight: 500; color: #4a4038; margin-top: 4px; }
+
+  .how { padding: 60px 0 30px; }
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 20px; margin-top: 32px; }
+  .step { text-align: center; }
+  .step .n {
+    width: 50px; height: 50px; border-radius: 50%; background: var(--orange); color: var(--white);
+    border: 3px solid var(--ink); box-shadow: 3px 3px 0 var(--ink);
+    display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 20px;
+  }
+  .step h3 { font-size: 17px; font-weight: 800; margin-top: 12px; }
+  .step p { font-size: 14px; font-weight: 500; color: #4a4038; }
+
+  .soon-band { background: var(--teal); border-top: 3px solid var(--ink); border-bottom: 3px solid var(--ink); padding: 56px 0; margin-top: 40px; }
+  .soon { text-align: center; padding: 36px 28px; }
+  .soon .pill {
+    display: inline-block; background: var(--orange); color: var(--white); font-weight: 800; font-size: 12px;
+    padding: 6px 16px; border-radius: 999px; text-transform: uppercase; letter-spacing: 1.5px; border: 3px solid var(--ink);
+  }
+  .soon h2 { margin-top: 14px; }
+  .soon p { font-weight: 600; color: #4a4038; max-width: 500px; margin: 10px auto 0; }
+
+  footer { padding: 34px 0 48px; text-align: center; font-weight: 600; font-size: 14px; color: #8a7b6d; }
+</style>
+</head>
+<body>
+  <header class="wrap">
+    <nav class="nav">
+      <span class="logo-badge">🧻 BLOOP</span>
+      <a class="cta" href="#soon">Get the app</a>
+    </nav>
+  </header>
+
+  <section class="hero wrap">
+    <div class="mascot" aria-hidden="true">
+      <div class="roll">
+        <span class="tube"></span>
+        <span class="eye"></span>
+        <span class="wink"></span>
+        <span class="smile"></span>
+        <span class="paper"></span>
+      </div>
+    </div>
+    <h1>Get paid<br/><span class="o">to go.</span></h1>
+    <p class="sub">Every bathroom break at work is money in your pocket — you just never counted it. BLOOP runs the clock and shows exactly how much you earned. Live.</p>
+    <div class="badges">
+      <span class="badge-dark"> Coming soon · App Store</span>
+      <a class="badge-orange" href="https://www.instagram.com/bloop.now/" target="_blank" rel="noopener">📸 Follow @bloop.now</a>
+    </div>
+
+    <div class="ticker sticker">
+      <div class="head">Bloop in progress…</div>
+      <div class="body">
+        <div class="t-time" id="t">00:00</div>
+        <div class="t-label">You earned</div>
+        <div class="t-money" id="m">₪0.00</div>
+        <div class="t-hint">Live demo · based on ₪60/hour</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="features wrap">
+    <h2>Why people love it</h2>
+    <div class="grid">
+      <div class="card sticker c-orange">
+        <div class="ic">⏱️</div>
+        <h3>Live earnings timer</h3>
+        <p>Hit start on your way in. Watch the shekels stack up every single second you're... busy.</p>
+      </div>
+      <div class="card sticker">
+        <div class="ic">📊</div>
+        <h3>Lifetime stats</h3>
+        <p>Total minutes, total money, every session counted. Your porcelain career, quantified.</p>
+      </div>
+      <div class="card sticker c-teal">
+        <div class="ic">💰</div>
+        <h3>Real rewards soon</h3>
+        <p>Answer surveys, earn actual money, withdraw at ₪200. In the works right now.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="how wrap">
+    <h2>How it works</h2>
+    <div class="steps">
+      <div class="step"><span class="n">1</span><h3>Set your wage</h3><p>Once. We remember forever.</p></div>
+      <div class="step"><span class="n">2</span><h3>Start a session</h3><p>Tap on your way in.</p></div>
+      <div class="step"><span class="n">3</span><h3>Do your thing</h3><p>Clock and cash keep running.</p></div>
+      <div class="step"><span class="n">4</span><h3>Flex it</h3><p>Finish, see the total, show the office.</p></div>
+    </div>
+  </section>
+
+  <div class="soon-band" id="soon">
+    <div class="wrap">
+      <div class="soon sticker">
+        <span class="pill">Almost there</span>
+        <h2>Launching on the App Store 🚀</h2>
+        <p>BLOOP is in final testing right now. Follow us on Instagram to catch the launch — and be the first to flex your bathroom salary.</p>
+        <div class="badges" style="margin-top:20px;">
+          <a class="badge-orange" href="https://www.instagram.com/bloop.now/" target="_blank" rel="noopener">📸 Follow @bloop.now</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="wrap">BLOOP · made with 🧻 and love<br/>
+      Support: <a href="mailto:lior5852@gmail.com" style="color:#F4772E;font-weight:700;text-decoration:none;">lior5852@gmail.com</a> · <a href="/privacy" style="color:#F4772E;font-weight:700;text-decoration:none;">Privacy Policy</a></div>
+  </footer>
+
+<script>
+  (function () {
+    var start = Date.now();
+    var wage = 60;
+    function pad(n) { return String(n).padStart(2, "0"); }
+    setInterval(function () {
+      var s = Math.floor((Date.now() - start) / 1000);
+      document.getElementById("t").textContent = pad(Math.floor(s / 60)) + ":" + pad(s % 60);
+      document.getElementById("m").textContent = "₪" + ((wage / 3600) * s).toFixed(2);
+    }, 250);
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,368 @@
+/**
+ * bloop — core logic (framework-agnostic, no React Native imports).
+ *
+ * Everything here is pure and unit-testable. The UI in App.tsx imports from
+ * this module so that business rules can be verified without a device.
+ */
+
+/* ------------------------------ Currency -------------------------------- */
+
+export interface Currency {
+  symbol: string;
+  code: string;
+  name: string;
+}
+
+/** Currencies the user can pick at signup (changeable anytime). */
+export const CURRENCIES: readonly Currency[] = [
+  { symbol: '₪', code: 'ILS', name: 'Israeli Shekel' },
+  { symbol: '$', code: 'USD', name: 'US Dollar' },
+  { symbol: '€', code: 'EUR', name: 'Euro' },
+  { symbol: '£', code: 'GBP', name: 'British Pound' },
+  { symbol: '¥', code: 'JPY', name: 'Japanese Yen' },
+  { symbol: '₹', code: 'INR', name: 'Indian Rupee' },
+] as const;
+
+/**
+ * The active currency symbol. A live ESM binding: importers always see the
+ * current value, and setCurrency validates against the known list.
+ */
+export let CURRENCY = '₪';
+
+export const setCurrency = (symbol: string): void => {
+  if (CURRENCIES.some((c) => c.symbol === symbol)) {
+    CURRENCY = symbol;
+  }
+};
+
+/** Surveys/rewards MVP: users can withdraw once their wallet reaches this. */
+export const WITHDRAW_THRESHOLD = 200;
+
+export const STORAGE_KEYS = {
+  user: '@bloop:user',
+  wage: '@bloop:hourlyWage',
+  stats: '@bloop:lifetimeStats',
+  wallet: '@bloop:wallet',
+  daily: '@bloop:dailyStats',
+  blocked: '@bloop:blockedUsers',
+  currency: '@bloop:currency',
+} as const;
+
+/* ------------------------------- Types ---------------------------------- */
+
+export type AuthProvider = 'local' | 'apple' | 'google';
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  provider: AuthProvider;
+  createdAt: number;
+}
+
+/** Cumulative, never-reset totals across every logged session. */
+export interface LifetimeStats {
+  totalSeconds: number;
+  totalEarned: number;
+  sessions: number;
+}
+
+/** Future surveys/rewards balance (real ₪ the user can withdraw). */
+export interface Wallet {
+  balance: number;
+}
+
+export interface SessionResult {
+  elapsedSeconds: number;
+  amountEarned: number;
+}
+
+/* ----------------------------- Factories -------------------------------- */
+
+export const emptyStats = (): LifetimeStats => ({
+  totalSeconds: 0,
+  totalEarned: 0,
+  sessions: 0,
+});
+
+export const emptyWallet = (): Wallet => ({ balance: 0 });
+
+export const makeUser = (
+  name: string,
+  email: string,
+  provider: AuthProvider,
+): User => ({
+  id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  name: name.trim(),
+  email: email.trim().toLowerCase(),
+  provider,
+  createdAt: Date.now(),
+});
+
+/* ------------------------------ Earnings -------------------------------- */
+
+/** Longest session we count (4h) — guards against forgotten timers. */
+export const MAX_SESSION_SECONDS = 4 * 3600;
+
+/** Money earned for a duration at a given hourly wage. Never negative. */
+export const earningsFor = (seconds: number, hourlyWage: number): number => {
+  if (seconds <= 0 || hourlyWage <= 0) return 0;
+  const clamped = Math.min(seconds, MAX_SESSION_SECONDS);
+  return (hourlyWage / 3600) * clamped;
+};
+
+/** Fold a finished session into lifetime totals. */
+export const addSession = (
+  stats: LifetimeStats,
+  result: SessionResult,
+): LifetimeStats => ({
+  totalSeconds: stats.totalSeconds + Math.max(0, result.elapsedSeconds),
+  totalEarned: stats.totalEarned + Math.max(0, result.amountEarned),
+  sessions: stats.sessions + 1,
+});
+
+/* ---------------------------- Formatting -------------------------------- */
+
+const pad2 = (n: number): string => n.toString().padStart(2, '0');
+
+/** Seconds -> "MM:SS" (minutes can exceed 99). */
+export const formatTime = (totalSeconds: number): string => {
+  const safe = Math.max(0, Math.floor(totalSeconds));
+  return `${pad2(Math.floor(safe / 60))}:${pad2(safe % 60)}`;
+};
+
+/** Whole minutes accumulated. */
+export const totalMinutes = (totalSeconds: number): number =>
+  Math.floor(Math.max(0, totalSeconds) / 60);
+
+/** Deterministic thousands-grouped 2dp money string (Hermes-safe, no Intl). */
+export const formatMoney = (amount: number): string => {
+  const fixed = Math.max(0, amount).toFixed(2);
+  const [intPart, dec] = fixed.split('.');
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${grouped}.${dec}`;
+};
+
+/* ---------------------------- Validation -------------------------------- */
+
+/** Upper bound for a plausible hourly wage (abuse/typo guard). */
+export const MAX_WAGE = 10000;
+
+/** Parse a user-typed wage. Accepts comma decimals. Returns null if invalid. */
+export const parseWage = (input: string): number | null => {
+  const parsed = parseFloat(input.trim().replace(',', '.'));
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > MAX_WAGE) return null;
+  return parsed;
+};
+
+export const isValidEmail = (email: string): boolean =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+
+export const isValidName = (name: string): boolean => name.trim().length >= 2;
+
+/* ------------------------------ Wallet ---------------------------------- */
+
+/** Max single credit accepted from a survey completion (abuse guard). */
+export const MAX_SINGLE_CREDIT = 100;
+
+export const canWithdraw = (wallet: Wallet): boolean =>
+  wallet.balance >= WITHDRAW_THRESHOLD;
+
+/** 0..1 progress toward the withdrawal threshold. */
+export const withdrawProgress = (wallet: Wallet): number => {
+  const p = wallet.balance / WITHDRAW_THRESHOLD;
+  return p < 0 ? 0 : p > 1 ? 1 : p;
+};
+
+/**
+ * Credit a survey reward into the wallet.
+ * Rejects non-positive, NaN, and absurdly large amounts (returns wallet as-is).
+ */
+export const creditWallet = (wallet: Wallet, amount: number): Wallet => {
+  if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_SINGLE_CREDIT) {
+    return wallet;
+  }
+  return { balance: Math.round((wallet.balance + amount) * 100) / 100 };
+};
+
+/** Deduct a successful withdrawal. Returns null if not allowed. */
+export const applyWithdrawal = (wallet: Wallet): Wallet | null => {
+  if (!canWithdraw(wallet)) return null;
+  return {
+    balance: Math.round((wallet.balance - WITHDRAW_THRESHOLD) * 100) / 100,
+  };
+};
+
+/* ------------------------------ Surveys --------------------------------- */
+
+export interface SurveyOffer {
+  id: string;
+  title: string;
+  minutes: number;
+  reward: number;
+  emoji: string;
+}
+
+/**
+ * Demo offers shown until a real survey provider (e.g. BitLabs / CPX) is
+ * connected. Rewards are intentionally small and pass creditWallet's guards.
+ */
+export const DEMO_OFFERS: readonly SurveyOffer[] = [
+  { id: 'demo-1', title: 'Quick taste test', minutes: 2, reward: 1.5, emoji: '🍫' },
+  { id: 'demo-2', title: 'Shopping habits', minutes: 5, reward: 4, emoji: '🛒' },
+  { id: 'demo-3', title: 'Streaming & TV', minutes: 8, reward: 6.5, emoji: '📺' },
+  { id: 'demo-4', title: 'Travel dreams', minutes: 12, reward: 10, emoji: '✈️' },
+] as const;
+
+/* --------------------------- Daily metrics ------------------------------ */
+/*
+ * Designed for speed: per-day aggregates in a small map (max 60 keys).
+ * Updating after a session is O(1); rendering a 7-day chart is O(7);
+ * pruning runs only when the map exceeds the cap.
+ */
+
+export interface DayAgg {
+  seconds: number;
+  earned: number;
+  sessions: number;
+}
+
+export interface DailyStore {
+  days: Record<string, DayAgg>;
+  bestSessionSeconds: number;
+}
+
+export const MAX_TRACKED_DAYS = 60;
+
+export const emptyDaily = (): DailyStore => ({
+  days: {},
+  bestSessionSeconds: 0,
+});
+
+/** Local-timezone YYYY-MM-DD key for a timestamp. */
+export const dayKey = (ts: number): string => {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+
+/** Fold a finished session into the daily store (immutable, pruned). */
+export const addToDaily = (
+  store: DailyStore,
+  result: SessionResult,
+  now: number = Date.now(),
+): DailyStore => {
+  const key = dayKey(now);
+  const seconds = Math.max(0, Math.min(result.elapsedSeconds, MAX_SESSION_SECONDS));
+  const earned = Math.max(0, result.amountEarned);
+  const prev = store.days[key] ?? { seconds: 0, earned: 0, sessions: 0 };
+  const days: Record<string, DayAgg> = {
+    ...store.days,
+    [key]: {
+      seconds: prev.seconds + seconds,
+      earned: prev.earned + earned,
+      sessions: prev.sessions + 1,
+    },
+  };
+  const keys = Object.keys(days);
+  if (keys.length > MAX_TRACKED_DAYS) {
+    keys.sort();
+    for (const stale of keys.slice(0, keys.length - MAX_TRACKED_DAYS)) {
+      delete days[stale];
+    }
+  }
+  return {
+    days,
+    bestSessionSeconds: Math.max(store.bestSessionSeconds, seconds),
+  };
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Consecutive active days ending today (or yesterday if today is empty). */
+export const streakDays = (
+  store: DailyStore,
+  now: number = Date.now(),
+): number => {
+  let cursor = now;
+  if (!store.days[dayKey(cursor)]) cursor -= DAY_MS;
+  let streak = 0;
+  while (store.days[dayKey(cursor)]) {
+    streak += 1;
+    cursor -= DAY_MS;
+  }
+  return streak;
+};
+
+export interface ChartDay {
+  key: string;
+  label: string;
+  agg: DayAgg;
+}
+
+const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const;
+
+/** The last `n` days (oldest first) with weekday labels, for charts. */
+export const lastDays = (
+  store: DailyStore,
+  n: number,
+  now: number = Date.now(),
+): ChartDay[] => {
+  const out: ChartDay[] = [];
+  for (let i = n - 1; i >= 0; i -= 1) {
+    const ts = now - i * DAY_MS;
+    out.push({
+      key: dayKey(ts),
+      label: WEEKDAY_LETTERS[new Date(ts).getDay()],
+      agg: store.days[dayKey(ts)] ?? { seconds: 0, earned: 0, sessions: 0 },
+    });
+  }
+  return out;
+};
+
+/** The single best earning day on record, or null. */
+export const bestDay = (store: DailyStore): DayAgg | null => {
+  let best: DayAgg | null = null;
+  for (const agg of Object.values(store.days)) {
+    if (best === null || agg.earned > best.earned) best = agg;
+  }
+  return best;
+};
+
+/* ------------------------------ Usernames ------------------------------- */
+
+/** 3–16 chars, letters/digits/underscore — the shared public identity. */
+export const isValidUsername = (name: string): boolean =>
+  /^[a-zA-Z0-9_]{3,16}$/.test(name.trim());
+
+export const normalizeUsername = (name: string): string =>
+  name.trim().toLowerCase();
+
+/**
+ * Offensive-term blocklist for usernames (App Store UGC guideline 1.2).
+ * Substring match on the normalized name; deliberately strict — a username
+ * is public, so false positives are acceptable.
+ */
+const BLOCKED_USERNAME_TERMS: readonly string[] = [
+  'fuck', 'shit', 'bitch', 'cunt', 'nigg', 'fagg', 'whore', 'slut',
+  'rape', 'nazi', 'hitler', 'porn', 'penis', 'vagina', 'dick', 'cock',
+  'pussy', 'anal', 'nude', 'zona', 'sharmut', 'kusemek', 'benzona',
+  'manyak', 'kakfan',
+] as const;
+
+/** True when the username contains no blocked term. */
+export const isCleanUsername = (name: string): boolean => {
+  const n = normalizeUsername(name).replace(/_/g, '');
+  return !BLOCKED_USERNAME_TERMS.some((term) => n.includes(term));
+};
+
+/* ---------------------------- Persistence ------------------------------- */
+
+/** Safe JSON parse with a typed fallback — never throws. */
+export const parseJSON = <T>(raw: string | null, fallback: T): T => {
+  if (raw === null) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+};

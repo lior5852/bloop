@@ -4,12 +4,45 @@
     "slug": "bloop",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "scheme": "bloop",
     "newArchEnabled": true,
+    "plugins": [
+      "expo-apple-authentication"
+    ],
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFF7FB"
+    },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.bloop.app"
-    }
+      "bundleIdentifier": "com.liortzur.bloop",
+      "buildNumber": "1",
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.liortzur.bloop",
+      "adaptiveIcon": {
+        "backgroundColor": "#7C4DFF",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "1d9c6772-5800-4cfc-9ec6-f41eb9d47675"
+      }
+    },
+    "owner": "lior5852"
   }
 }

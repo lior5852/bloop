@@ -15,6 +15,7 @@ import {
   Animated,
   Dimensions,
   ScrollView,
+  Linking,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import LottieView from 'lottie-react-native';
@@ -27,6 +28,8 @@ import { SOCIAL_LOGIN_ENABLED } from './src/config';
 import {
   signInWithApple,
   signInWithGoogle,
+  signUpWithEmail,
+  signInWithEmail,
   signOut as authSignOut,
   getCurrentUser,
   AuthError,
@@ -64,6 +67,9 @@ import {
 const LOTTIE_URL =
   'https://lottie.host/4db68bbd-31f6-4cd8-84c2-8dcbe5c0b657/eBiVsBfaS4.json';
 
+/** bloop on the web — the shop button opens this. */
+export const SHOP_URL = 'https://bloop-app-kravi11.vercel.app/shop';
+
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DRAWER_WIDTH = Math.min(320, SCREEN_WIDTH * 0.82);
 
@@ -80,6 +86,97 @@ const save = (pairs: Array<[string, unknown]>): void => {
   AsyncStorage.setMany(
     Object.fromEntries(pairs.map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)])),
   ).catch(() => {});
+};
+
+/* -------------------------------------------------------------------------- */
+/*                            Mascot (brand mark)                              */
+/* -------------------------------------------------------------------------- */
+/* The winking toilet-roll from the BLOOP sticker logo, drawn with views so it
+ * needs no asset and scales crisply. */
+
+const Mascot: React.FC<{ size?: number }> = ({ size = 46 }) => {
+  const k = size / 46;
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: COLORS.primary,
+        borderWidth: 2.5 * k,
+        borderColor: COLORS.ink,
+        borderRadius: 12 * k,
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: COLORS.ink,
+        shadowOffset: { width: 2 * k, height: 2 * k },
+        shadowOpacity: 1,
+        shadowRadius: 0,
+      }}
+      accessibilityLabel="bloop mascot"
+    >
+      <View
+        style={{
+          width: 30 * k,
+          height: 25 * k,
+          backgroundColor: COLORS.card,
+          borderWidth: 2 * k,
+          borderColor: COLORS.ink,
+          borderRadius: 7 * k,
+        }}
+      >
+        <View
+          style={{
+            position: 'absolute',
+            right: 3 * k,
+            top: 3 * k,
+            width: 8 * k,
+            height: 8 * k,
+            borderWidth: 2 * k,
+            borderColor: COLORS.ink,
+            borderRadius: 5 * k,
+            backgroundColor: COLORS.card,
+          }}
+        />
+        <View
+          style={{
+            position: 'absolute',
+            left: 5 * k,
+            top: 8 * k,
+            width: 3 * k,
+            height: 3 * k,
+            borderRadius: 2 * k,
+            backgroundColor: COLORS.ink,
+          }}
+        />
+        <View
+          style={{
+            position: 'absolute',
+            left: 11 * k,
+            top: 9 * k,
+            width: 6 * k,
+            height: 3 * k,
+            borderBottomWidth: 2 * k,
+            borderColor: COLORS.ink,
+            borderBottomLeftRadius: 4 * k,
+            borderBottomRightRadius: 4 * k,
+          }}
+        />
+        <View
+          style={{
+            position: 'absolute',
+            left: 7 * k,
+            bottom: 3 * k,
+            width: 12 * k,
+            height: 5 * k,
+            borderBottomWidth: 2 * k,
+            borderColor: COLORS.ink,
+            borderBottomLeftRadius: 6 * k,
+            borderBottomRightRadius: 6 * k,
+          }}
+        />
+      </View>
+    </View>
+  );
 };
 
 /* -------------------------------------------------------------------------- */
@@ -148,20 +245,57 @@ const Confetti: React.FC<{ burstKey: number }> = ({ burstKey }) => {
 /* -------------------------------------------------------------------------- */
 
 interface AuthProps {
-  onSignUp: (name: string, email: string) => void;
+  onEmailSignUp: (username: string, email: string, password: string, confirm: string) => void;
+  onEmailLogin: (email: string, password: string) => void;
+  onGuest: () => void;
   onSocial: (provider: 'apple' | 'google') => void;
   busy: boolean;
 }
 
-const AuthScreen: React.FC<AuthProps> = ({ onSignUp, onSocial, busy }) => {
-  const [name, setName] = useState('');
+const AuthScreen: React.FC<AuthProps> = ({
+  onEmailSignUp,
+  onEmailLogin,
+  onGuest,
+  onSocial,
+  busy,
+}) => {
+  const [mode, setMode] = useState<'signup' | 'login'>('signup');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+
+  const signup = mode === 'signup';
 
   const handleSubmit = (): void => {
-    if (!isValidName(name)) return Alert.alert('Oops!', 'Please enter your name.');
-    if (!isValidEmail(email)) return Alert.alert('Oops!', 'Please enter a valid email.');
-    onSignUp(name, email);
+    if (signup) onEmailSignUp(username, email, password, confirm);
+    else onEmailLogin(email, password);
   };
+
+  const field = (
+    label: string,
+    value: string,
+    set: (v: string) => void,
+    opts: { placeholder: string; secure?: boolean; emailKb?: boolean; last?: boolean },
+  ): React.JSX.Element => (
+    <>
+      <Text style={styles.inputLabel}>{label}</Text>
+      <TextInput
+        style={styles.textField}
+        value={value}
+        onChangeText={set}
+        placeholder={opts.placeholder}
+        placeholderTextColor={COLORS.subtle}
+        secureTextEntry={opts.secure}
+        keyboardType={opts.emailKb ? 'email-address' : 'default'}
+        autoCapitalize="none"
+        autoCorrect={false}
+        returnKeyType={opts.last ? 'done' : 'next'}
+        onSubmitEditing={opts.last ? handleSubmit : undefined}
+      />
+      {!opts.last && <View style={styles.fieldDivider} />}
+    </>
+  );
 
   return (
     <KeyboardAvoidingView style={ui.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -170,38 +304,56 @@ const AuthScreen: React.FC<AuthProps> = ({ onSignUp, onSocial, busy }) => {
           <Text style={styles.emoji}>🚽💸</Text>
           <Text style={styles.title}>bloop</Text>
           <Text style={styles.subtitle}>
-            Get paid to go. Create your account to start tracking every break.
+            {signup
+              ? 'Get paid to go. Create your account to start tracking every break.'
+              : 'Welcome back! Log in to keep blooping.'}
           </Text>
 
-          <View style={styles.inputCard}>
-            <Text style={styles.inputLabel}>Name</Text>
-            <TextInput
-              style={styles.textField}
-              value={name}
-              onChangeText={setName}
-              placeholder="Li"
-              placeholderTextColor={COLORS.subtle}
-              autoCapitalize="words"
-              returnKeyType="next"
-            />
-            <View style={styles.fieldDivider} />
-            <Text style={styles.inputLabel}>Email</Text>
-            <TextInput
-              style={styles.textField}
-              value={email}
-              onChangeText={setEmail}
-              placeholder="name@email.com"
-              placeholderTextColor={COLORS.subtle}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="done"
-              onSubmitEditing={handleSubmit}
-            />
+          <View style={styles.modeRow}>
+            <TouchableOpacity
+              style={[styles.modeTab, signup && styles.modeTabActive]}
+              onPress={() => setMode('signup')}
+            >
+              <Text style={[styles.modeTabText, signup && styles.modeTabTextActive]}>Sign up</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modeTab, !signup && styles.modeTabActive]}
+              onPress={() => setMode('login')}
+            >
+              <Text style={[styles.modeTabText, !signup && styles.modeTabTextActive]}>Log in</Text>
+            </TouchableOpacity>
           </View>
 
-          <TouchableOpacity style={styles.primaryButton} activeOpacity={0.85} onPress={handleSubmit}>
-            <Text style={styles.primaryButtonText}>Create account 🎉</Text>
+          <View style={styles.inputCard}>
+            {signup &&
+              field('Username', username, setUsername, { placeholder: 'toilet_king_99' })}
+            {field('Email', email, setEmail, { placeholder: 'name@email.com', emailKb: true, last: false })}
+            {field('Password', password, setPassword, {
+              placeholder: 'At least 8 characters',
+              secure: true,
+              last: !signup,
+            })}
+            {signup &&
+              field('Confirm password', confirm, setConfirm, {
+                placeholder: 'Same one again',
+                secure: true,
+                last: true,
+              })}
+          </View>
+
+          <TouchableOpacity
+            style={styles.primaryButton}
+            activeOpacity={0.85}
+            disabled={busy}
+            onPress={handleSubmit}
+          >
+            <Text style={styles.primaryButtonText}>
+              {signup ? 'Create account 🎉' : 'Log in 🔑'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.guestLink} disabled={busy} onPress={onGuest}>
+            <Text style={styles.guestLinkText}>Just let me bloop (continue as guest) →</Text>
           </TouchableOpacity>
 
           {SOCIAL_LOGIN_ENABLED && (
@@ -233,9 +385,9 @@ const AuthScreen: React.FC<AuthProps> = ({ onSignUp, onSocial, busy }) => {
           {busy && <ActivityIndicator style={styles.authSpinner} color={COLORS.primary} />}
 
           <Text style={styles.footnote}>
-            {SOCIAL_LOGIN_ENABLED
-              ? 'Apple & Google sign-in sync your account across devices.'
-              : 'Your data is stored locally on your device.'}
+            {signup
+              ? 'Your account powers the friends leaderboard. Timer data stays on your device.'
+              : 'Forgot your password? Email lior5852@gmail.com and we’ll sort you out.'}
           </Text>
         </ScrollView>
       </SafeAreaView>
@@ -650,12 +802,37 @@ const MainScreen: React.FC<MainProps> = ({
             >
               <Text style={styles.menuIcon}>☰</Text>
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>bloop</Text>
-            <View style={styles.menuButton} />
+            <View style={styles.brandRow}>
+              <Mascot size={40} />
+              <Text style={styles.headerTitle}>BLOOP</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.menuButton}
+              accessibilityLabel="Open the bloop shop"
+              onPress={() => {
+                haptic.light();
+                Linking.openURL(SHOP_URL).catch(() => {});
+              }}
+            >
+              <Text style={styles.menuIcon}>🛍</Text>
+            </TouchableOpacity>
           </View>
 
+          <Text style={styles.greeting}>
+            Hi @{user.name}! Ready to turn breaks into bank? 🧻
+          </Text>
+
           <View style={styles.wageStatsRow}>
-            {statCards.map((c) => (
+            <TouchableOpacity
+              style={styles.wageStatCard}
+              activeOpacity={0.8}
+              accessibilityLabel="Edit hourly wage"
+              onPress={() => openSheet('wage')}
+            >
+              <Text style={styles.wageStatLabel}>Hourly wage ✏️</Text>
+              <Text style={styles.wageStatValue}>{money(hourlyWage)}</Text>
+            </TouchableOpacity>
+            {statCards.slice(1).map((c) => (
               <View key={c.label} style={[styles.wageStatCard, c.mint && styles.mintBg]}>
                 <Text style={styles.wageStatLabel}>{c.label}</Text>
                 <Text style={[styles.wageStatValue, c.mint && ui.mintText]}>
@@ -791,8 +968,37 @@ export default function App(): React.JSX.Element {
     [enterAs],
   );
 
-  const handleSignUp = useCallback(
-    (name: string, email: string): void => enterAs(makeUser(name, email, 'local')),
+  /** Wrap an async auth call with busy state + friendly error alerts. */
+  const runAuth = useCallback(
+    async (fn: () => Promise<User>): Promise<void> => {
+      setBusy(true);
+      try {
+        enterAs(await fn());
+      } catch (e) {
+        const msg = e instanceof AuthError ? e.message : 'Something went wrong. Please try again.';
+        Alert.alert('Account', msg);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [enterAs],
+  );
+
+  const handleEmailSignUp = useCallback(
+    (username: string, email: string, password: string, confirm: string): void =>
+      void runAuth(() => signUpWithEmail(username, email, password, confirm)),
+    [runAuth],
+  );
+
+  const handleEmailLogin = useCallback(
+    (email: string, password: string): void =>
+      void runAuth(() => signInWithEmail(email, password)),
+    [runAuth],
+  );
+
+  /** Guest mode: fully local, no server account (can sign up later). */
+  const handleGuest = useCallback(
+    (): void => enterAs(makeUser('guest', 'guest@bloop.local', 'local')),
     [enterAs],
   );
 
@@ -854,7 +1060,15 @@ export default function App(): React.JSX.Element {
           <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
       )}
-      {screen === 'auth' && <AuthScreen onSignUp={handleSignUp} onSocial={handleSocial} busy={busy} />}
+      {screen === 'auth' && (
+        <AuthScreen
+          onEmailSignUp={handleEmailSignUp}
+          onEmailLogin={handleEmailLogin}
+          onGuest={handleGuest}
+          onSocial={handleSocial}
+          busy={busy}
+        />
+      )}
       {screen === 'wage' && (
         <SafeAreaView style={ui.flex}>
           <WageForm
@@ -912,6 +1126,19 @@ const styles = StyleSheet.create({
 
   /* Auth */
   authScroll: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.xl, paddingBottom: SPACING.lg },
+  modeRow: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.hairline,
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: SPACING.md,
+  },
+  modeTab: { flex: 1, paddingVertical: 9, borderRadius: 11, alignItems: 'center' },
+  modeTabActive: { backgroundColor: COLORS.primary, ...STICKER_SM, shadowOffset: { width: 2, height: 2 } },
+  modeTabText: { fontSize: 15, fontWeight: '700', color: COLORS.subtle },
+  modeTabTextActive: { color: COLORS.card },
+  guestLink: { alignItems: 'center', paddingVertical: SPACING.md },
+  guestLinkText: { fontSize: 14, fontWeight: '700', color: COLORS.subtle },
   inputCard: {
     backgroundColor: COLORS.card,
     borderRadius: 22,
@@ -997,7 +1224,15 @@ const styles = StyleSheet.create({
   },
   menuButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   menuIcon: { fontSize: 26, color: COLORS.ink },
-  headerTitle: { fontSize: 24, fontWeight: '800', color: COLORS.ink, letterSpacing: -0.5 },
+  headerTitle: { fontSize: 24, fontWeight: '800', color: COLORS.ink, letterSpacing: 1 },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  greeting: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.subtle,
+    textAlign: 'center',
+    marginBottom: SPACING.sm,
+  },
 
   wageStatsRow: { flexDirection: 'row', gap: SPACING.sm, marginBottom: SPACING.md },
   wageStatCard: {

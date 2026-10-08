@@ -19,7 +19,16 @@ import {
   isGoogleConfigured,
   isSupabaseConfigured,
 } from './config';
-import type { User, AuthProvider } from './core';
+import {
+  isValidEmail,
+  isValidUsername,
+  isCleanUsername,
+  isValidPassword,
+  normalizeUsername,
+  MIN_PASSWORD_LENGTH,
+  type User,
+  type AuthProvider,
+} from './core';
 
 export class AuthError extends Error {}
 
@@ -52,6 +61,101 @@ const ensureGoogleConfigured = (): void => {
     webClientId: GOOGLE_WEB_CLIENT_ID,
   });
   googleConfigured = true;
+};
+
+/* --------------------------- Email + password --------------------------- */
+
+const validateSignUp = (
+  username: string,
+  email: string,
+  password: string,
+  confirm: string,
+): void => {
+  if (!isValidUsername(username)) {
+    throw new AuthError('Username must be 3-16 letters, numbers or underscores.');
+  }
+  if (!isCleanUsername(username)) {
+    throw new AuthError("That username isn't allowed. Try another one.");
+  }
+  if (!isValidEmail(email)) {
+    throw new AuthError('Please enter a valid email.');
+  }
+  if (!isValidPassword(password)) {
+    throw new AuthError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+  }
+  if (password !== confirm) {
+    throw new AuthError("Passwords don't match.");
+  }
+};
+
+/** Claim the public username for the signed-in user (unique in profiles). */
+const claimUsernameRow = async (uid: string, username: string): Promise<void> => {
+  const { error } = await supabase
+    .from('profiles')
+    .upsert({ id: uid, username: normalizeUsername(username) }, { onConflict: 'id' });
+  if (error) {
+    if (error.code === '23505') {
+      throw new AuthError('That username is already taken.');
+    }
+    throw new AuthError(error.message);
+  }
+};
+
+/** Create a real server account: email + password + unique username. */
+export const signUpWithEmail = async (
+  username: string,
+  email: string,
+  password: string,
+  confirm: string,
+): Promise<User> => {
+  if (!isSupabaseConfigured()) {
+    throw new AuthError('Sign-up is unavailable right now. Try again later.');
+  }
+  validateSignUp(username, email, password, confirm);
+
+  const { data, error } = await supabase.auth.signUp({
+    email: email.trim().toLowerCase(),
+    password,
+    options: { data: { username: normalizeUsername(username) } },
+  });
+  if (error) {
+    if (/already registered/i.test(error.message)) {
+      throw new AuthError('This email is already registered. Try logging in.');
+    }
+    throw new AuthError(error.message);
+  }
+  if (!data.user || !data.session) {
+    throw new AuthError('Check your email to confirm your account, then log in.');
+  }
+
+  await claimUsernameRow(data.user.id, username);
+  return { ...mapUser(data.user, 'email'), name: normalizeUsername(username) };
+};
+
+/** Log in to an existing email account. */
+export const signInWithEmail = async (
+  email: string,
+  password: string,
+): Promise<User> => {
+  if (!isSupabaseConfigured()) {
+    throw new AuthError('Login is unavailable right now. Try again later.');
+  }
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: email.trim().toLowerCase(),
+    password,
+  });
+  if (error || !data.user) {
+    throw new AuthError('Wrong email or password.');
+  }
+
+  // Prefer the public username as the display name.
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('username')
+    .eq('id', data.user.id)
+    .maybeSingle();
+  const username = (profile?.username as string | undefined) ?? undefined;
+  return { ...mapUser(data.user, 'email', username), name: username ?? mapUser(data.user, 'email').name };
 };
 
 /* ------------------------------ Apple ----------------------------------- */

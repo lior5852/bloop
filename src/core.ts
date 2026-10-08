@@ -53,7 +53,7 @@ export const ALL_STORAGE_KEYS: readonly string[] = Object.values(STORAGE_KEYS);
 
 /* ------------------------------- Types ---------------------------------- */
 
-export type AuthProvider = 'local' | 'apple' | 'google';
+export type AuthProvider = 'local' | 'email' | 'apple' | 'google';
 
 export interface User {
   id: string;
@@ -165,6 +165,11 @@ export const isValidEmail = (email: string): boolean =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 
 export const isValidName = (name: string): boolean => name.trim().length >= 2;
+
+export const MIN_PASSWORD_LENGTH = 8;
+
+export const isValidPassword = (password: string): boolean =>
+  password.length >= MIN_PASSWORD_LENGTH;
 
 /* ------------------------------ Wallet ---------------------------------- */
 

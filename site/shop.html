@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>BLOOP Shop — merch for bathroom entrepreneurs 🧻</title>
+<meta name="description" content="Official BLOOP merch: tees, caps, keychains and more for people who get paid to go." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<style>
+  :root { --cream:#FDF3E3; --orange:#F4772E; --teal:#2BBFA4; --ink:#1B1511; --white:#FFFDF8; --sun:#FFD166; --pink:#F49BC4; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:"Baloo 2",-apple-system,sans-serif; background:var(--cream); color:var(--ink); line-height:1.5; }
+  .wrap { max-width:1000px; margin:0 auto; padding:0 22px; }
+  header { padding:20px 0; }
+  .nav { display:flex; align-items:center; justify-content:space-between; }
+  .logo-badge { display:inline-flex; align-items:center; gap:8px; background:var(--orange); border:3px solid var(--ink);
+    border-radius:14px; padding:5px 14px; box-shadow:4px 4px 0 var(--ink); font-weight:800; font-size:18px;
+    letter-spacing:1px; color:var(--white); text-decoration:none; }
+  .nav .links { display:flex; gap:10px; }
+  .nav a.lnk { background:var(--ink); color:var(--cream); text-decoration:none; padding:9px 16px;
+    border-radius:12px; font-weight:700; font-size:14px; border:3px solid var(--ink); }
+
+  .hero { text-align:center; padding:36px 0 10px; }
+  h1 { font-size:clamp(34px,6vw,54px); font-weight:800; text-transform:uppercase; letter-spacing:-1px; }
+  h1 .o { color:var(--orange); -webkit-text-stroke:2px var(--ink); }
+  .sub { font-weight:600; color:#4a4038; max-width:520px; margin:10px auto 0; }
+  .note { display:inline-block; margin-top:16px; background:var(--sun); border:3px solid var(--ink); border-radius:12px;
+    box-shadow:4px 4px 0 var(--ink); padding:8px 16px; font-weight:700; font-size:14px; }
+
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:22px; padding:34px 0 10px; }
+  .card { background:var(--white); border:3px solid var(--ink); border-radius:20px; box-shadow:6px 6px 0 var(--ink);
+    overflow:hidden; display:flex; flex-direction:column; }
+  .pic { height:130px; display:flex; align-items:center; justify-content:center; font-size:56px;
+    border-bottom:3px solid var(--ink); }
+  .p-orange{background:var(--orange);} .p-teal{background:var(--teal);} .p-sun{background:var(--sun);}
+  .p-pink{background:var(--pink);} .p-cream{background:var(--cream);} .p-ink{background:var(--ink);}
+  .body { padding:14px 16px 16px; display:flex; flex-direction:column; gap:6px; flex:1; }
+  .name { font-weight:800; font-size:16px; line-height:1.2; }
+  .desc { font-size:13px; font-weight:500; color:#6b5f52; flex:1; }
+  .row { display:flex; align-items:center; justify-content:space-between; margin-top:6px; }
+  .price { font-weight:800; font-size:18px; color:var(--orange); }
+  .buy { background:var(--orange); color:var(--white); border:2.5px solid var(--ink); border-radius:10px;
+    box-shadow:3px 3px 0 var(--ink); padding:7px 12px; font-weight:800; font-size:13px; text-decoration:none; }
+  .buy:active { transform:translate(2px,2px); box-shadow:1px 1px 0 var(--ink); }
+
+  .app-band { background:var(--teal); border-top:3px solid var(--ink); border-bottom:3px solid var(--ink);
+    padding:44px 0; margin-top:44px; text-align:center; }
+  .app-card { background:var(--white); border:3px solid var(--ink); border-radius:22px; box-shadow:7px 7px 0 var(--ink);
+    padding:30px; display:inline-block; }
+  .app-card h2 { font-size:26px; font-weight:800; text-transform:uppercase; }
+  .app-card p { font-weight:600; color:#4a4038; margin-top:6px; }
+  .badge-dark { display:inline-block; margin-top:14px; background:var(--ink); color:var(--cream); border-radius:12px;
+    padding:10px 18px; font-weight:700; font-size:14px; text-decoration:none; }
+  footer { padding:30px 0 46px; text-align:center; font-weight:600; font-size:13px; color:#8a7b6d; }
+  footer a { color:var(--orange); font-weight:700; text-decoration:none; }
+</style>
+</head>
+<body>
+  <header class="wrap">
+    <nav class="nav">
+      <a class="logo-badge" href="/">🧻 BLOOP</a>
+      <div class="links">
+        <a class="lnk" href="/">Home</a>
+        <a class="lnk" href="https://www.instagram.com/bloop.now/" target="_blank" rel="noopener">📸 DM to order</a>
+      </div>
+    </nav>
+  </header>
+
+  <section class="hero wrap">
+    <h1>The bloop <span class="o">shop</span></h1>
+    <p class="sub">Merch for people whose best ideas happen on the throne. Every piece ships with full bragging rights.</p>
+    <span class="note">🚧 Pre-orders only for now — DM us on Instagram to grab yours</span>
+  </section>
+
+  <section class="grid wrap">
+    <div class="card"><div class="pic p-orange">👕</div><div class="body">
+      <div class="name">"Get Paid To Go" tee</div>
+      <div class="desc">The company motto, chest-sized. Cream print on 100% cotton.</div>
+      <div class="row"><span class="price">₪89</span><a class="buy" href="https://www.instagram.com/bloop.now/" target="_blank" rel="noopener">Order 📸</a></div>
+    </div></div>
+
+    <div class="card"><div class="pic p-cream">🧻</div><div class="body">
+      <div class="name">Winking Roll tee</div>
+      <div class="desc">The BLOOP mascot, big and proud. He knows what you did.</div>
+      <div class="row"><span class="price">₪89</span><a class="buy" href="https://www.instagram.com/bloop.now/" target="_blank" rel="noopener">Order 📸</a></div>
+    </div></div>
+
+    <div class="card"><div class="pic p-ink">🧥</div><div class="body">
+      <div class="name">"Bloop in progress…" hoodie</div>
+      <div class="desc">Back print so the office knows not to disturb. Heavyweight, cozy.</div>
+      <div class="row"><span class="price">₪159</span><a class="buy" href="https://www.instagram.com/bloop.now/" target="_blank" rel="noopener">Order 📸</a></div>
+    </div></div>
+
+    <div class="card"><div class="pic p-teal">🧢</div><div class="body">
+      <div class="name">"CEO of the Bathroom" cap</div>
+      <div class="desc">Embroidered title you actually earned. One size fits all egos.</div>
+      <div class="row"><span class="price">₪69</span><a class="buy" href="https://www.instagram.com/bloop.now/" target="_blank" rel="noopener">Order 📸</a></div>
+    </div></div>
+
+    <div class="card"><div class="pic p-sun">🔑</div><div class="body">
+      <div class="name">Mini Roll keychain</div>
+      <div class="desc">A tiny rubber winking roll for your keys. Squishy. Dangerously cute.</div>
+      <div class="row"><span class="price">₪29</span><a class="buy" href="https://www.instagram.com/bloop.now/" target="_blank" rel="noopener">Order 📸</a></div>
+    </div></div>
+
+    <div class="card"><div class="pic p-pink">✨</div><div class="body">
+      <div class="name">Sticker pack (6)</div>
+      <div class="desc">Mascot, "Get paid to go", ₪ rain and friends. Laptop-ready, waterproof.</div>
+      <div class="row"><span class="price">₪19</span><a class="buy" href="https://www.instagram.com/bloop.now/" target="_blank" rel="noopener">Order 📸</a></div>
+    </div></div>
+
+    <div class="card"><div class="pic p-teal">☕</div><div class="body">
+      <div class="name">"On the clock" mug</div>
+      <div class="desc">Coffee in → bloop out. The circle of profit, in ceramic.</div>
+      <div class="row"><span class="price">₪49</span><a class="buy" href="https://www.instagram.com/bloop.now/" target="_blank" rel="noopener">Order 📸</a></div>
+    </div></div>
+
+    <div class="card"><div class="pic p-orange">🧦</div><div class="body">
+      <div class="name">Money-rain socks</div>
+      <div class="desc">💸 all over. The only part of your outfit earning its keep.</div>
+      <div class="row"><span class="price">₪39</span><a class="buy" href="https://www.instagram.com/bloop.now/" target="_blank" rel="noopener">Order 📸</a></div>
+    </div></div>
+
+    <div class="card"><div class="pic p-cream">🚪</div><div class="body">
+      <div class="name">"Out of office" door hanger</div>
+      <div class="desc">Wooden sign: "Gone blooping — back richer." For home or the brave at work.</div>
+      <div class="row"><span class="price">₪35</span><a class="buy" href="https://www.instagram.com/bloop.now/" target="_blank" rel="noopener">Order 📸</a></div>
+    </div></div>
+
+    <div class="card"><div class="pic p-sun">📱</div><div class="body">
+      <div class="name">Mascot phone case</div>
+      <div class="desc">The winking roll guards your phone — even when it drops where phones shouldn't go.</div>
+      <div class="row"><span class="price">₪69</span><a class="buy" href="https://www.instagram.com/bloop.now/" target="_blank" rel="noopener">Order 📸</a></div>
+    </div></div>
+  </section>
+
+  <div class="app-band">
+    <div class="wrap">
+      <div class="app-card">
+        <h2>Earn the money first 💸</h2>
+        <p>The BLOOP app times your breaks and shows what you earned — live.</p>
+        <a class="badge-dark" href="/#soon"> Coming soon · App Store</a>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="wrap">
+      BLOOP · made with 🧻 and love · <a href="/">Home</a> · <a href="/privacy">Privacy</a> ·
+      Support: <a href="mailto:lior5852@gmail.com">lior5852@gmail.com</a>
+    </div>
+  </footer>
+</body>
+</html>

@@ -843,6 +843,15 @@ const MainScreen: React.FC<MainProps> = ({
             ))}
           </View>
 
+          <TouchableOpacity
+            style={styles.friendsButton}
+            activeOpacity={0.85}
+            accessibilityLabel="Add friends and open the leaderboard"
+            onPress={() => openSheet('friends')}
+          >
+            <Text style={styles.friendsButtonText}>👥 Add friends · race them to the throne 👑</Text>
+          </TouchableOpacity>
+
           <Tracker hourlyWage={hourlyWage} onFinish={handleFinish} />
 
           {/* Ad slot placeholder — reserves layout space for a future ad network. */}
@@ -1226,6 +1235,15 @@ const styles = StyleSheet.create({
   menuIcon: { fontSize: 26, color: COLORS.ink },
   headerTitle: { fontSize: 24, fontWeight: '800', color: COLORS.ink, letterSpacing: 1 },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  friendsButton: {
+    backgroundColor: COLORS.accent,
+    borderRadius: 14,
+    paddingVertical: 11,
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+    ...STICKER_SM,
+  },
+  friendsButtonText: { fontSize: 14, fontWeight: '800', color: COLORS.card },
   greeting: {
     fontSize: 14,
     fontWeight: '700',

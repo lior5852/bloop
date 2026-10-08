@@ -33,6 +33,26 @@ export interface IncomingRequest {
   fromUsername: string;
 }
 
+interface ProfileRow {
+  id?: string;
+  username?: string;
+  total_earned?: number | string | null;
+  total_seconds?: number | string | null;
+}
+
+const PROFILE_COLUMNS = 'id, username, total_earned, total_seconds';
+
+/** DB row (snake_case) -> app shape. Shared by findUser + listFriends. */
+const toProfile = (row: ProfileRow | null | undefined): FriendProfile | null =>
+  row?.id && row.username
+    ? {
+        id: row.id,
+        username: row.username,
+        totalEarned: Number(row.total_earned ?? 0),
+        totalSeconds: Number(row.total_seconds ?? 0),
+      }
+    : null;
+
 /** Ensure we have a server identity (anonymous is fine). Returns user id. */
 export const ensureIdentity = async (): Promise<string> => {
   if (!isSupabaseConfigured()) {
@@ -107,16 +127,10 @@ export const findUser = async (raw: string): Promise<FriendProfile | null> => {
   await ensureIdentity();
   const { data } = await supabase
     .from('profiles')
-    .select('id, username, total_earned, total_seconds')
+    .select(PROFILE_COLUMNS)
     .eq('username', normalizeUsername(raw))
     .maybeSingle();
-  if (!data) return null;
-  return {
-    id: data.id as string,
-    username: data.username as string,
-    totalEarned: Number(data.total_earned ?? 0),
-    totalSeconds: Number(data.total_seconds ?? 0),
-  };
+  return toProfile(data as ProfileRow | null);
 };
 
 /** Send a friend request (pending until the other side approves). */
@@ -171,28 +185,18 @@ export const listFriends = async (): Promise<FriendProfile[]> => {
   const { data } = await supabase
     .from('friend_requests')
     .select(
-      'from_id, to_id, from_profile:profiles!friend_requests_from_id_fkey(id, username, total_earned, total_seconds), to_profile:profiles!friend_requests_to_id_fkey(id, username, total_earned, total_seconds)',
+      `from_id, from_profile:profiles!friend_requests_from_id_fkey(${PROFILE_COLUMNS}), to_profile:profiles!friend_requests_to_id_fkey(${PROFILE_COLUMNS})`,
     )
     .eq('status', 'accepted')
     .or(`from_id.eq.${uid},to_id.eq.${uid}`);
 
-  const friends: FriendProfile[] = [];
-  for (const row of data ?? []) {
-    const other = (row.from_id === uid ? row.to_profile : row.from_profile) as {
-      id?: string;
-      username?: string;
-      total_earned?: number;
-      total_seconds?: number;
-    } | null;
-    if (other?.id && other.username) {
-      friends.push({
-        id: other.id,
-        username: other.username,
-        totalEarned: Number(other.total_earned ?? 0),
-        totalSeconds: Number(other.total_seconds ?? 0),
-      });
-    }
+  interface FriendRow {
+    from_id: string;
+    from_profile: ProfileRow | null;
+    to_profile: ProfileRow | null;
   }
-  friends.sort((a, b) => b.totalEarned - a.totalEarned);
-  return friends;
+  return ((data ?? []) as unknown as FriendRow[])
+    .map((row) => toProfile(row.from_id === uid ? row.to_profile : row.from_profile))
+    .filter((p): p is FriendProfile => p !== null)
+    .sort((a, b) => b.totalEarned - a.totalEarned);
 };

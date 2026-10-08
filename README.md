@@ -45,7 +45,7 @@ Press `i` to open the iOS simulator, or scan the QR code with the Expo Go app on
 npm test
 ```
 
-Runs the flow and structure suite (`src/core.test.ts`) with Node's built-in test runner — 21 tests covering earnings math (incl. 4-hour session clamp), session aggregation, wage parsing (incl. abuse bounds), email validation, wallet crediting guards, withdrawal thresholds, and the full signup → wage → sessions flow. No jest install required.
+Runs the flow and structure suite (`src/core.test.ts`) with Node's built-in test runner — 34 tests covering earnings math (incl. 4-hour session clamp), session aggregation, wage parsing (incl. abuse bounds), email validation, wallet crediting guards, withdrawal thresholds, and the full signup → wage → sessions flow. No jest install required.
 
 ```bash
 npm run typecheck   # strict TypeScript check of the whole project

@@ -18,7 +18,6 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import LottieView from 'lottie-react-native';
-import * as Haptics from 'expo-haptics';
 
 import SurveysScreen from './src/SurveysScreen';
 import StatsScreen from './src/StatsScreen';
@@ -32,16 +31,19 @@ import {
   getCurrentUser,
   AuthError,
 } from './src/auth';
+import { COLORS, STICKER, STICKER_SM, SPACING, haptic, ProgressBar, ui } from './src/ui';
 import {
   CURRENCY,
   CURRENCIES,
   setCurrency,
   STORAGE_KEYS,
+  ALL_STORAGE_KEYS,
   WITHDRAW_THRESHOLD,
   earningsFor,
   addSession,
+  addToDaily,
   formatTime,
-  formatMoney,
+  money,
   totalMinutes,
   parseWage,
   isValidEmail,
@@ -50,53 +52,14 @@ import {
   emptyStats,
   emptyWallet,
   emptyDaily,
-  addToDaily,
-  type DailyStore,
   withdrawProgress,
   parseJSON,
+  type DailyStore,
   type User,
   type LifetimeStats,
   type Wallet,
   type SessionResult,
-  type AuthProvider,
 } from './src/core';
-
-/* -------------------------------------------------------------------------- */
-/*                                   Theme                                     */
-/* -------------------------------------------------------------------------- */
-
-// BLOOP brand (matches the Instagram sticker identity):
-// cream background, bold orange, thick ink outlines, teal for money.
-const COLORS = {
-  background: '#FDF3E3',
-  card: '#FFFDF8',
-  primary: '#F4772E',
-  primaryDark: '#E05F16',
-  accent: '#2BBFA4',
-  mint: '#1D9E82',
-  mintBg: '#DFF5EF',
-  sunshine: '#FFD166',
-  ink: '#1B1511',
-  subtle: '#8A7B6D',
-  danger: '#E24B4A',
-  dangerBg: '#FCEBEB',
-  hairline: '#F0E4D0',
-  black: '#1B1511',
-  google: '#FFFDF8',
-  googleText: '#1B1511',
-} as const;
-
-/** Sticker-style hard shadow + thick outline, shared across cards/buttons. */
-const STICKER = {
-  borderWidth: 3,
-  borderColor: '#1B1511',
-  shadowColor: '#1B1511',
-  shadowOffset: { width: 4, height: 4 },
-  shadowOpacity: 1,
-  shadowRadius: 0,
-} as const;
-
-const SPACING = { xs: 6, sm: 12, md: 16, lg: 24, xl: 32 } as const;
 
 const LOTTIE_URL =
   'https://lottie.host/4db68bbd-31f6-4cd8-84c2-8dcbe5c0b657/eBiVsBfaS4.json';
@@ -105,21 +68,18 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DRAWER_WIDTH = Math.min(320, SCREEN_WIDTH * 0.82);
 
 type AppScreen = 'loading' | 'auth' | 'wage' | 'main';
+/** Which full-screen sheet is open — they are mutually exclusive. */
+type Sheet = 'none' | 'wage' | 'surveys' | 'stats' | 'friends';
 
-/* -------------------------------------------------------------------------- */
-/*                              Haptics helpers                               */
-/* -------------------------------------------------------------------------- */
-
-const tapLight = (): void => {
-  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-};
-const tapHeavy = (): void => {
-  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
-};
-const celebrate = (): void => {
-  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
-    () => {},
-  );
+/**
+ * Persist key/value pairs in ONE batched write; strings stored raw, the rest
+ * as JSON. AsyncStorage v3 renamed multiSet/multiGet/multiRemove to
+ * setMany/getMany/removeMany — the old names are undefined at runtime.
+ */
+const save = (pairs: Array<[string, unknown]>): void => {
+  AsyncStorage.setMany(
+    Object.fromEntries(pairs.map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)])),
+  ).catch(() => {});
 };
 
 /* -------------------------------------------------------------------------- */
@@ -132,7 +92,6 @@ interface ConfettiPiece {
   emoji: string;
   x: number;
   delay: number;
-  duration: number;
   size: number;
 }
 
@@ -141,7 +100,6 @@ const makeConfetti = (count: number): ConfettiPiece[] =>
     emoji: CONFETTI_PIECES[i % CONFETTI_PIECES.length],
     x: Math.random() * (SCREEN_WIDTH - 40),
     delay: Math.random() * 400,
-    duration: 1200 + Math.random() * 800,
     size: 18 + Math.random() * 14,
   }));
 
@@ -153,129 +111,62 @@ const Confetti: React.FC<{ burstKey: number }> = ({ burstKey }) => {
     if (burstKey === 0) return;
     setPieces(makeConfetti(18));
     anim.setValue(0);
-    Animated.timing(anim, {
-      toValue: 1,
-      duration: 2200,
-      useNativeDriver: true,
-    }).start(() => setPieces([]));
+    Animated.timing(anim, { toValue: 1, duration: 2200, useNativeDriver: true }).start(
+      () => setPieces([]),
+    );
   }, [burstKey, anim]);
 
   if (pieces.length === 0) return null;
 
+  const opacity = anim.interpolate({ inputRange: [0, 0.75, 1], outputRange: [1, 1, 0] });
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {pieces.map((p, i) => {
-        const translateY = anim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [-60, 640 + p.delay],
-        });
-        const rotate = anim.interpolate({
-          inputRange: [0, 1],
-          outputRange: ['0deg', i % 2 === 0 ? '360deg' : '-360deg'],
-        });
-        const opacity = anim.interpolate({
-          inputRange: [0, 0.75, 1],
-          outputRange: [1, 1, 0],
-        });
-        return (
-          <Animated.Text
-            key={`${burstKey}-${i}`}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: p.x,
-              fontSize: p.size,
-              opacity,
-              transform: [{ translateY }, { rotate }],
-            }}
-          >
-            {p.emoji}
-          </Animated.Text>
-        );
-      })}
+      {pieces.map((p, i) => (
+        <Animated.Text
+          key={`${burstKey}-${i}`}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: p.x,
+            fontSize: p.size,
+            opacity,
+            transform: [
+              { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [-60, 640 + p.delay] }) },
+              { rotate: anim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', i % 2 ? '-360deg' : '360deg'] }) },
+            ],
+          }}
+        >
+          {p.emoji}
+        </Animated.Text>
+      ))}
     </View>
   );
 };
-
-/* -------------------------------------------------------------------------- */
-/*                          Social auth placeholders                          */
-/* -------------------------------------------------------------------------- */
-
-interface SocialButtonsProps {
-  onApple: () => void;
-  onGoogle: () => void;
-  busy: boolean;
-}
-
-const SocialButtons: React.FC<SocialButtonsProps> = ({
-  onApple,
-  onGoogle,
-  busy,
-}) => (
-  <View>
-    <TouchableOpacity
-      style={[styles.socialButton, styles.appleButton]}
-      activeOpacity={0.85}
-      disabled={busy}
-      onPress={onApple}
-    >
-      <Text style={styles.appleLogo}></Text>
-      <Text style={styles.appleButtonText}>Continue with Apple</Text>
-    </TouchableOpacity>
-    <TouchableOpacity
-      style={[styles.socialButton, styles.googleButton]}
-      activeOpacity={0.85}
-      disabled={busy}
-      onPress={onGoogle}
-    >
-      <Text style={styles.googleLogo}>G</Text>
-      <Text style={styles.googleButtonText}>Continue with Google</Text>
-    </TouchableOpacity>
-  </View>
-);
 
 /* -------------------------------------------------------------------------- */
 /*                                Auth screen                                 */
 /* -------------------------------------------------------------------------- */
 
 interface AuthProps {
-  onSignUp: (name: string, email: string, provider: AuthProvider) => void;
-  onApple: () => void;
-  onGoogle: () => void;
+  onSignUp: (name: string, email: string) => void;
+  onSocial: (provider: 'apple' | 'google') => void;
   busy: boolean;
 }
 
-const AuthScreen: React.FC<AuthProps> = ({
-  onSignUp,
-  onApple,
-  onGoogle,
-  busy,
-}) => {
-  const [name, setName] = useState<string>('');
-  const [email, setEmail] = useState<string>('');
+const AuthScreen: React.FC<AuthProps> = ({ onSignUp, onSocial, busy }) => {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
 
-  const handleSubmit = useCallback((): void => {
-    if (!isValidName(name)) {
-      Alert.alert('Oops!', 'Please enter your name.');
-      return;
-    }
-    if (!isValidEmail(email)) {
-      Alert.alert('Oops!', 'Please enter a valid email.');
-      return;
-    }
-    onSignUp(name, email, 'local');
-  }, [name, email, onSignUp]);
+  const handleSubmit = (): void => {
+    if (!isValidName(name)) return Alert.alert('Oops!', 'Please enter your name.');
+    if (!isValidEmail(email)) return Alert.alert('Oops!', 'Please enter a valid email.');
+    onSignUp(name, email);
+  };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <SafeAreaView style={styles.flex}>
-        <ScrollView
-          contentContainerStyle={styles.authScroll}
-          keyboardShouldPersistTaps="handled"
-        >
+    <KeyboardAvoidingView style={ui.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <SafeAreaView style={ui.flex}>
+        <ScrollView contentContainerStyle={styles.authScroll} keyboardShouldPersistTaps="handled">
           <Text style={styles.emoji}>🚽💸</Text>
           <Text style={styles.title}>bloop</Text>
           <Text style={styles.subtitle}>
@@ -309,11 +200,7 @@ const AuthScreen: React.FC<AuthProps> = ({
             />
           </View>
 
-          <TouchableOpacity
-            style={styles.primaryButton}
-            activeOpacity={0.85}
-            onPress={handleSubmit}
-          >
+          <TouchableOpacity style={styles.primaryButton} activeOpacity={0.85} onPress={handleSubmit}>
             <Text style={styles.primaryButtonText}>Create account 🎉</Text>
           </TouchableOpacity>
 
@@ -324,16 +211,26 @@ const AuthScreen: React.FC<AuthProps> = ({
                 <Text style={styles.dividerText}>or</Text>
                 <View style={styles.divider} />
               </View>
-              <SocialButtons onApple={onApple} onGoogle={onGoogle} busy={busy} />
+              <TouchableOpacity
+                style={[styles.socialButton, styles.appleButton]}
+                disabled={busy}
+                onPress={() => onSocial('apple')}
+              >
+                <Text style={[styles.socialText, styles.white]}> Continue with Apple</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.socialButton, styles.googleButton]}
+                disabled={busy}
+                onPress={() => onSocial('google')}
+              >
+                <Text style={styles.socialText}>
+                  <Text style={styles.googleLogo}>G </Text>Continue with Google
+                </Text>
+              </TouchableOpacity>
             </>
           )}
 
-          {busy && (
-            <ActivityIndicator
-              style={styles.authSpinner}
-              color={COLORS.primary}
-            />
-          )}
+          {busy && <ActivityIndicator style={styles.authSpinner} color={COLORS.primary} />}
 
           <Text style={styles.footnote}>
             {SOCIAL_LOGIN_ENABLED
@@ -367,17 +264,14 @@ const WageForm: React.FC<WageFormProps> = ({
   onSubmit,
   onCancel,
 }) => {
-  const [wage, setWage] = useState<string>(initialValue);
-  const [symbol, setSymbol] = useState<string>(CURRENCY);
+  const [wage, setWage] = useState(initialValue);
+  const [symbol, setSymbol] = useState(CURRENCY);
 
-  const handleSubmit = useCallback((): void => {
+  const handleSubmit = (): void => {
     const parsed = parseWage(wage);
-    if (parsed === null) {
-      Alert.alert('Oops!', 'Please enter a valid hourly wage.');
-      return;
-    }
+    if (parsed === null) return Alert.alert('Oops!', 'Please enter a valid hourly wage.');
     onSubmit(parsed, symbol);
-  }, [wage, symbol, onSubmit]);
+  };
 
   return (
     <View style={styles.wageFormBody}>
@@ -386,26 +280,21 @@ const WageForm: React.FC<WageFormProps> = ({
       <Text style={styles.subtitle}>{subtitle}</Text>
 
       <View style={styles.currencyRow}>
-        {CURRENCIES.map((c) => (
-          <TouchableOpacity
-            key={c.code}
-            style={[
-              styles.currencyPill,
-              symbol === c.symbol && styles.currencyPillActive,
-            ]}
-            accessibilityLabel={`Use ${c.name}`}
-            onPress={() => setSymbol(c.symbol)}
-          >
-            <Text
-              style={[
-                styles.currencyPillText,
-                symbol === c.symbol && styles.currencyPillTextActive,
-              ]}
+        {CURRENCIES.map((c) => {
+          const active = symbol === c.symbol;
+          return (
+            <TouchableOpacity
+              key={c.code}
+              style={[styles.currencyPill, active && styles.currencyPillActive]}
+              accessibilityLabel={`Use ${c.name}`}
+              onPress={() => setSymbol(c.symbol)}
             >
-              {c.symbol} {c.code}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text style={[styles.currencyPillText, active && styles.white]}>
+                {c.symbol} {c.code}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       <View style={styles.inputCard}>
@@ -428,20 +317,12 @@ const WageForm: React.FC<WageFormProps> = ({
         </View>
       </View>
 
-      <TouchableOpacity
-        style={styles.primaryButton}
-        activeOpacity={0.85}
-        onPress={handleSubmit}
-      >
+      <TouchableOpacity style={styles.primaryButton} activeOpacity={0.85} onPress={handleSubmit}>
         <Text style={styles.primaryButtonText}>{submitLabel}</Text>
       </TouchableOpacity>
 
       {onCancel && (
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          activeOpacity={0.7}
-          onPress={onCancel}
-        >
+        <TouchableOpacity style={styles.secondaryButton} activeOpacity={0.7} onPress={onCancel}>
           <Text style={styles.secondaryButtonText}>Cancel</Text>
         </TouchableOpacity>
       )}
@@ -450,35 +331,15 @@ const WageForm: React.FC<WageFormProps> = ({
 };
 
 /* -------------------------------------------------------------------------- */
-/*                           Ad banner placeholder                            */
-/* -------------------------------------------------------------------------- */
-
-// Placeholder slot for a future ad (e.g. react-native-google-mobile-ads).
-// Keeping the layout space reserved now avoids reflow when ads are wired in.
-const AdBanner: React.FC = () => (
-  <View style={styles.adBanner}>
-    <Text style={styles.adBannerText}>Ad space · coming soon</Text>
-  </View>
-);
-
-/* -------------------------------------------------------------------------- */
 /*                              Session summary                               */
 /* -------------------------------------------------------------------------- */
 
-interface SummaryProps {
+const SummaryModal: React.FC<{
   visible: boolean;
   result: SessionResult | null;
   onClose: () => void;
-}
-
-const SummaryModal: React.FC<SummaryProps> = ({ visible, result, onClose }) => (
-  <Modal
-    visible={visible}
-    transparent
-    animationType="slide"
-    presentationStyle="overFullScreen"
-    onRequestClose={onClose}
-  >
+}> = ({ visible, result, onClose }) => (
+  <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
     <View style={styles.modalBackdrop}>
       <View style={styles.modalCard}>
         <View style={styles.grabber} />
@@ -488,23 +349,14 @@ const SummaryModal: React.FC<SummaryProps> = ({ visible, result, onClose }) => (
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
             <Text style={styles.statLabel}>Time</Text>
-            <Text style={styles.statValue}>
-              {result ? formatTime(result.elapsedSeconds) : '00:00'}
-            </Text>
+            <Text style={styles.statValue}>{formatTime(result?.elapsedSeconds ?? 0)}</Text>
           </View>
-          <View style={[styles.statBox, styles.statBoxAccent]}>
+          <View style={[styles.statBox, styles.mintBg]}>
             <Text style={styles.statLabel}>Earned</Text>
-            <Text style={[styles.statValue, styles.statValueAccent]}>
-              {CURRENCY}
-              {result ? formatMoney(result.amountEarned) : '0.00'}
-            </Text>
+            <Text style={[styles.statValue, ui.mintText]}>{money(result?.amountEarned ?? 0)}</Text>
           </View>
         </View>
-        <TouchableOpacity
-          style={styles.primaryButton}
-          activeOpacity={0.85}
-          onPress={onClose}
-        >
+        <TouchableOpacity style={styles.primaryButton} activeOpacity={0.85} onPress={onClose}>
           <Text style={styles.primaryButtonText}>Nice! Done</Text>
         </TouchableOpacity>
       </View>
@@ -522,12 +374,17 @@ interface DrawerProps {
   stats: LifetimeStats;
   wallet: Wallet;
   onClose: () => void;
-  onEditWage: () => void;
-  onSurveys: () => void;
-  onStats: () => void;
-  onFriends: () => void;
+  onOpenSheet: (sheet: Sheet) => void;
   onDeleteAccount: () => void;
   onLogout: () => void;
+}
+
+interface DrawerRow {
+  icon: string;
+  label: string;
+  onPress: () => void;
+  danger?: boolean;
+  extra?: React.ReactNode;
 }
 
 const Drawer: React.FC<DrawerProps> = ({
@@ -536,55 +393,58 @@ const Drawer: React.FC<DrawerProps> = ({
   stats,
   wallet,
   onClose,
-  onEditWage,
-  onSurveys,
-  onStats,
-  onFriends,
+  onOpenSheet,
   onDeleteAccount,
   onLogout,
 }) => {
-  const translateX = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
-  const overlay = useRef(new Animated.Value(0)).current;
-  const [mounted, setMounted] = useState<boolean>(open);
+  const progress = useRef(new Animated.Value(0)).current; // 0 = closed, 1 = open
+  const [mounted, setMounted] = useState(open);
 
   useEffect(() => {
     if (open) setMounted(true);
-    Animated.parallel([
-      Animated.timing(translateX, {
-        toValue: open ? 0 : -DRAWER_WIDTH,
-        duration: 240,
-        useNativeDriver: true,
-      }),
-      Animated.timing(overlay, {
-        toValue: open ? 1 : 0,
-        duration: 240,
-        useNativeDriver: true,
-      }),
-    ]).start(({ finished }: { finished: boolean }) => {
-      if (finished && !open) setMounted(false);
-    });
-  }, [open, translateX, overlay]);
+    Animated.timing(progress, { toValue: open ? 1 : 0, duration: 240, useNativeDriver: true }).start(
+      ({ finished }: { finished: boolean }) => finished && !open && setMounted(false),
+    );
+  }, [open, progress]);
 
   if (!mounted) return null;
 
-  const initials = user.name.trim().slice(0, 1).toUpperCase() || 'U';
-  const progress = withdrawProgress(wallet);
+  const translateX = progress.interpolate({ inputRange: [0, 1], outputRange: [-DRAWER_WIDTH, 0] });
+
+  const rows: DrawerRow[] = [
+    { icon: '📈', label: 'My stats', onPress: () => onOpenSheet('stats') },
+    { icon: '👥', label: 'Friends & leaderboard', onPress: () => onOpenSheet('friends') },
+    { icon: '✏️', label: 'Edit hourly wage', onPress: () => onOpenSheet('wage') },
+    {
+      icon: '📝',
+      label: 'Surveys & rewards',
+      onPress: () => onOpenSheet('surveys'),
+      extra: (
+        <>
+          <ProgressBar value={withdrawProgress(wallet)} />
+          <Text style={styles.drawerSubtle}>
+            {money(wallet.balance)} / {CURRENCY}
+            {WITHDRAW_THRESHOLD} to withdraw
+          </Text>
+        </>
+      ),
+    },
+    { icon: '🚪', label: 'Log out', onPress: onLogout },
+    { icon: '🗑️', label: 'Delete account', onPress: onDeleteAccount, danger: true },
+  ];
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      <Animated.View
-        style={[styles.overlay, { opacity: overlay }]}
-        pointerEvents={open ? 'auto' : 'none'}
-      >
-        <TouchableOpacity style={styles.flex} activeOpacity={1} onPress={onClose} />
+      <Animated.View style={[styles.overlay, { opacity: progress }]} pointerEvents={open ? 'auto' : 'none'}>
+        <TouchableOpacity style={ui.flex} activeOpacity={1} onPress={onClose} />
       </Animated.View>
 
       <Animated.View style={[styles.drawer, { transform: [{ translateX }] }]}>
-        <SafeAreaView style={styles.flex}>
+        <SafeAreaView style={ui.flex}>
           <ScrollView contentContainerStyle={styles.drawerContent}>
             <View style={styles.drawerHeader}>
               <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{initials}</Text>
+                <Text style={styles.avatarText}>{user.name.trim().slice(0, 1).toUpperCase() || 'U'}</Text>
               </View>
               <Text style={styles.drawerName}>{user.name}</Text>
               <Text style={styles.drawerEmail}>{user.email}</Text>
@@ -593,16 +453,11 @@ const Drawer: React.FC<DrawerProps> = ({
             <Text style={styles.drawerSectionLabel}>Lifetime</Text>
             <View style={styles.drawerStatsRow}>
               <View style={styles.drawerStatBox}>
-                <Text style={styles.drawerStatValue}>
-                  {totalMinutes(stats.totalSeconds)}
-                </Text>
+                <Text style={styles.drawerStatValue}>{totalMinutes(stats.totalSeconds)}</Text>
                 <Text style={styles.drawerStatUnit}>minutes</Text>
               </View>
-              <View style={[styles.drawerStatBox, styles.drawerStatBoxMint]}>
-                <Text style={[styles.drawerStatValue, styles.mintText]}>
-                  {CURRENCY}
-                  {formatMoney(stats.totalEarned)}
-                </Text>
+              <View style={[styles.drawerStatBox, styles.mintBg]}>
+                <Text style={[styles.drawerStatValue, ui.mintText]}>{money(stats.totalEarned)}</Text>
                 <Text style={styles.drawerStatUnit}>earned</Text>
               </View>
             </View>
@@ -611,62 +466,104 @@ const Drawer: React.FC<DrawerProps> = ({
             </Text>
 
             <Text style={styles.drawerSectionLabel}>Account</Text>
-            <TouchableOpacity style={styles.drawerRow} onPress={onStats}>
-              <Text style={styles.drawerRowIcon}>📈</Text>
-              <Text style={styles.drawerRowText}>My stats</Text>
-              <Text style={styles.drawerChevron}>›</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.drawerRow} onPress={onFriends}>
-              <Text style={styles.drawerRowIcon}>👥</Text>
-              <Text style={styles.drawerRowText}>Friends &amp; leaderboard</Text>
-              <Text style={styles.drawerChevron}>›</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.drawerRow} onPress={onEditWage}>
-              <Text style={styles.drawerRowIcon}>✏️</Text>
-              <Text style={styles.drawerRowText}>Edit hourly wage</Text>
-              <Text style={styles.drawerChevron}>›</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.drawerRowDisabled} onPress={onSurveys}>
-              <Text style={styles.drawerRowIcon}>📝</Text>
-              <View style={styles.flex}>
-                <Text style={styles.drawerRowText}>Surveys &amp; rewards</Text>
-                <View style={styles.progressTrack}>
-                  <View
-                    style={[styles.progressFill, { width: `${progress * 100}%` }]}
-                  />
+            {rows.map((r) => (
+              <TouchableOpacity key={r.label} style={styles.drawerRow} onPress={r.onPress}>
+                <Text style={styles.drawerRowIcon}>{r.icon}</Text>
+                <View style={ui.flex}>
+                  <Text style={[styles.drawerRowText, r.danger && ui.dangerText]}>{r.label}</Text>
+                  {r.extra}
                 </View>
-                <Text style={styles.drawerSubtle}>
-                  {CURRENCY}
-                  {formatMoney(wallet.balance)} / {CURRENCY}
-                  {WITHDRAW_THRESHOLD} to withdraw
-                </Text>
-              </View>
-              <Text style={styles.drawerChevron}>›</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.drawerRow} onPress={onLogout}>
-              <Text style={styles.drawerRowIcon}>🚪</Text>
-              <Text style={styles.drawerRowText}>Log out</Text>
-              <Text style={styles.drawerChevron}>›</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.drawerRow}
-              onPress={onDeleteAccount}
-            >
-              <Text style={styles.drawerRowIcon}>🗑️</Text>
-              <Text style={[styles.drawerRowText, styles.dangerText]}>
-                Delete account
-              </Text>
-              <Text style={[styles.drawerChevron, styles.dangerText]}>›</Text>
-            </TouchableOpacity>
+                <Text style={[styles.drawerChevron, r.danger && ui.dangerText]}>›</Text>
+              </TouchableOpacity>
+            ))}
           </ScrollView>
         </SafeAreaView>
       </Animated.View>
     </View>
+  );
+};
+
+/* -------------------------------------------------------------------------- */
+/*                                  Tracker                                    */
+/* -------------------------------------------------------------------------- */
+/*
+ * The stopwatch lives in its own component so the per-second tick re-renders
+ * only this card — not the header, drawer, or the stats/friends/surveys sheets.
+ */
+
+const Tracker: React.FC<{
+  hourlyWage: number;
+  onFinish: (result: SessionResult) => void;
+}> = ({ hourlyWage, onFinish }) => {
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const pulse = useRef(new Animated.Value(1)).current;
+  const running = startedAt !== null;
+
+  // Derive seconds from the wall clock (never drifts); React skips the render
+  // when the value is unchanged, so 4 ticks/s cost ~1 render/s.
+  useEffect(() => {
+    if (startedAt === null) return undefined;
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 250);
+    return () => clearInterval(id);
+  }, [startedAt]);
+
+  useEffect(() => {
+    if (!running) {
+      pulse.setValue(1);
+      return undefined;
+    }
+    const beat = (toValue: number) =>
+      Animated.timing(pulse, { toValue, duration: 600, useNativeDriver: true });
+    const loop = Animated.loop(Animated.sequence([beat(1.08), beat(1)]));
+    loop.start();
+    return () => loop.stop();
+  }, [running, pulse]);
+
+  const handleStart = (): void => {
+    haptic.heavy();
+    setElapsed(0);
+    setStartedAt(Date.now());
+  };
+
+  const handleFinish = (): void => {
+    if (startedAt === null) return;
+    const seconds = Math.floor((Date.now() - startedAt) / 1000);
+    haptic.success();
+    setStartedAt(null);
+    setElapsed(0);
+    onFinish({ elapsedSeconds: seconds, amountEarned: earningsFor(seconds, hourlyWage) });
+  };
+
+  return (
+    <>
+      <View style={styles.animationWrap}>
+        <Animated.View style={{ transform: [{ scale: pulse }] }}>
+          <LottieView
+            source={{ uri: LOTTIE_URL }}
+            autoPlay
+            loop={running}
+            speed={running ? 1 : 0}
+            style={styles.lottie}
+          />
+        </Animated.View>
+      </View>
+
+      <View style={styles.counterCard}>
+        <Text style={styles.timerLabel}>{running ? 'Session in progress' : 'Ready when you are'}</Text>
+        <Text style={styles.timer}>{formatTime(elapsed)}</Text>
+        <Text style={styles.earnedLabel}>You earned</Text>
+        <Text style={styles.earnedValue}>{money(earningsFor(elapsed, hourlyWage))}</Text>
+      </View>
+
+      <TouchableOpacity
+        style={[styles.bigButton, running ? styles.finishButton : styles.startButton]}
+        activeOpacity={0.85}
+        onPress={running ? handleFinish : handleStart}
+      >
+        <Text style={styles.bigButtonText}>{running ? 'Finish 🏁' : 'Start Session 🚀'}</Text>
+      </TouchableOpacity>
+    </>
   );
 };
 
@@ -699,86 +596,28 @@ const MainScreen: React.FC<MainProps> = ({
   onDeleteAccount,
   onLogout,
 }) => {
-  const [isRunning, setIsRunning] = useState<boolean>(false);
-  const [elapsed, setElapsed] = useState<number>(0);
   const [summary, setSummary] = useState<SessionResult | null>(null);
-  const [showSummary, setShowSummary] = useState<boolean>(false);
-  const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
-  const [editWage, setEditWage] = useState<boolean>(false);
-  const [showSurveys, setShowSurveys] = useState<boolean>(false);
-  const [showStats, setShowStats] = useState<boolean>(false);
-  const [showFriends, setShowFriends] = useState<boolean>(false);
-  const [confettiKey, setConfettiKey] = useState<number>(0);
+  const [showSummary, setShowSummary] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sheet, setSheet] = useState<Sheet>('none');
+  const [confettiKey, setConfettiKey] = useState(0);
 
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startRef = useRef<number>(0);
-  const pulse = useRef(new Animated.Value(1)).current;
+  const closeSheet = useCallback(() => setSheet('none'), []);
 
-  useEffect(() => {
-    if (isRunning) {
-      const loop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulse, {
-            toValue: 1.08,
-            duration: 600,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulse, {
-            toValue: 1,
-            duration: 600,
-            useNativeDriver: true,
-          }),
-        ]),
-      );
-      loop.start();
-      return () => loop.stop();
-    }
-    pulse.setValue(1);
-    return undefined;
-  }, [isRunning, pulse]);
+  const openSheet = (next: Sheet): void => {
+    haptic.light();
+    setDrawerOpen(false);
+    setSheet(next);
+  };
 
-  const clearTimer = useCallback((): void => {
-    if (intervalRef.current !== null) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => clearTimer, [clearTimer]);
-
-  const handleStart = useCallback((): void => {
-    tapHeavy();
-    setElapsed(0);
-    startRef.current = Date.now();
-    setIsRunning(true);
-    clearTimer();
-    intervalRef.current = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
-    }, 250);
-  }, [clearTimer]);
-
-  const handleFinish = useCallback((): void => {
-    clearTimer();
-    celebrate();
-    const finalSeconds = Math.floor((Date.now() - startRef.current) / 1000);
-    setIsRunning(false);
-    setElapsed(finalSeconds);
-    const result: SessionResult = {
-      elapsedSeconds: finalSeconds,
-      amountEarned: earningsFor(finalSeconds, hourlyWage),
-    };
+  const handleFinish = (result: SessionResult): void => {
     setSummary(result);
     setShowSummary(true);
     setConfettiKey((k) => k + 1);
     onFinishSession(result);
-  }, [clearTimer, hourlyWage, onFinishSession]);
+  };
 
-  const handleCloseSummary = useCallback((): void => {
-    setShowSummary(false);
-    setElapsed(0);
-  }, []);
-
-  const confirmDelete = useCallback((): void => {
+  const confirmDelete = (): void => {
     setDrawerOpen(false);
     Alert.alert(
       'Delete account?',
@@ -788,20 +627,24 @@ const MainScreen: React.FC<MainProps> = ({
         { text: 'Delete', style: 'destructive', onPress: onDeleteAccount },
       ],
     );
-  }, [onDeleteAccount]);
+  };
 
-  const liveEarnings = earningsFor(elapsed, hourlyWage);
+  const statCards = [
+    { label: 'Hourly wage', value: money(hourlyWage) },
+    { label: 'Total time', value: String(totalMinutes(stats.totalSeconds)), unit: ' min' },
+    { label: 'Total earned', value: money(stats.totalEarned), mint: true },
+  ];
 
   return (
-    <View style={styles.flex}>
-      <SafeAreaView style={styles.flex}>
+    <View style={ui.flex}>
+      <SafeAreaView style={ui.flex}>
         <View style={styles.trackerContainer}>
           <View style={styles.header}>
             <TouchableOpacity
               style={styles.menuButton}
               activeOpacity={0.7}
               onPress={() => {
-                tapLight();
+                haptic.light();
                 setDrawerOpen(true);
               }}
             >
@@ -812,87 +655,29 @@ const MainScreen: React.FC<MainProps> = ({
           </View>
 
           <View style={styles.wageStatsRow}>
-            <View style={styles.wageStatCard}>
-              <Text style={styles.wageStatLabel}>Hourly wage</Text>
-              <Text style={styles.wageStatValue}>
-                {CURRENCY}
-                {formatMoney(hourlyWage)}
-              </Text>
-            </View>
-            <View style={styles.wageStatCard}>
-              <Text style={styles.wageStatLabel}>Total time</Text>
-              <Text style={styles.wageStatValue}>
-                {totalMinutes(stats.totalSeconds)}
-                <Text style={styles.wageStatUnit}> min</Text>
-              </Text>
-            </View>
-            <View style={[styles.wageStatCard, styles.wageStatCardMint]}>
-              <Text style={styles.wageStatLabel}>Total earned</Text>
-              <Text style={[styles.wageStatValue, styles.mintText]}>
-                {CURRENCY}
-                {formatMoney(stats.totalEarned)}
-              </Text>
-            </View>
+            {statCards.map((c) => (
+              <View key={c.label} style={[styles.wageStatCard, c.mint && styles.mintBg]}>
+                <Text style={styles.wageStatLabel}>{c.label}</Text>
+                <Text style={[styles.wageStatValue, c.mint && ui.mintText]}>
+                  {c.value}
+                  {c.unit && <Text style={styles.wageStatUnit}>{c.unit}</Text>}
+                </Text>
+              </View>
+            ))}
           </View>
 
-          <View style={styles.animationWrap}>
-            <Animated.View style={{ transform: [{ scale: pulse }] }}>
-              <LottieView
-                source={{ uri: LOTTIE_URL }}
-                autoPlay
-                loop={isRunning}
-                speed={isRunning ? 1 : 0}
-                style={styles.lottie}
-              />
-            </Animated.View>
+          <Tracker hourlyWage={hourlyWage} onFinish={handleFinish} />
+
+          {/* Ad slot placeholder — reserves layout space for a future ad network. */}
+          <View style={styles.adBanner}>
+            <Text style={styles.adBannerText}>Ad space · coming soon</Text>
           </View>
-
-          <View style={styles.counterCard}>
-            <Text style={styles.timerLabel}>
-              {isRunning ? 'Session in progress' : 'Ready when you are'}
-            </Text>
-            <Text style={styles.timer}>{formatTime(elapsed)}</Text>
-            <Text style={styles.earnedLabel}>You earned</Text>
-            <Text style={styles.earnedValue}>
-              {CURRENCY}
-              {formatMoney(liveEarnings)}
-            </Text>
-          </View>
-
-          {isRunning ? (
-            <TouchableOpacity
-              style={[styles.bigButton, styles.finishButton]}
-              activeOpacity={0.85}
-              onPress={handleFinish}
-            >
-              <Text style={styles.bigButtonText}>Finish 🏁</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[styles.bigButton, styles.startButton]}
-              activeOpacity={0.85}
-              onPress={handleStart}
-            >
-              <Text style={styles.bigButtonText}>Start Session 🚀</Text>
-            </TouchableOpacity>
-          )}
-
-          <AdBanner />
         </View>
       </SafeAreaView>
 
-      <SummaryModal
-        visible={showSummary}
-        result={summary}
-        onClose={handleCloseSummary}
-      />
+      <SummaryModal visible={showSummary} result={summary} onClose={() => setShowSummary(false)} />
 
-      <Modal
-        visible={editWage}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setEditWage(false)}
-      >
+      <Modal visible={sheet === 'wage'} transparent animationType="fade" onRequestClose={closeSheet}>
         <View style={styles.editBackdrop}>
           <View style={styles.editCard}>
             <WageForm
@@ -902,9 +687,9 @@ const MainScreen: React.FC<MainProps> = ({
               initialValue={String(hourlyWage)}
               onSubmit={(w, c) => {
                 onSaveWage(w, c);
-                setEditWage(false);
+                closeSheet();
               }}
-              onCancel={() => setEditWage(false)}
+              onCancel={closeSheet}
             />
           </View>
         </View>
@@ -916,25 +701,7 @@ const MainScreen: React.FC<MainProps> = ({
         stats={stats}
         wallet={wallet}
         onClose={() => setDrawerOpen(false)}
-        onEditWage={() => {
-          setDrawerOpen(false);
-          setEditWage(true);
-        }}
-        onSurveys={() => {
-          tapLight();
-          setDrawerOpen(false);
-          setShowSurveys(true);
-        }}
-        onStats={() => {
-          tapLight();
-          setDrawerOpen(false);
-          setShowStats(true);
-        }}
-        onFriends={() => {
-          tapLight();
-          setDrawerOpen(false);
-          setShowFriends(true);
-        }}
+        onOpenSheet={openSheet}
         onDeleteAccount={confirmDelete}
         onLogout={() => {
           setDrawerOpen(false);
@@ -943,24 +710,13 @@ const MainScreen: React.FC<MainProps> = ({
       />
 
       <SurveysScreen
-        visible={showSurveys}
+        visible={sheet === 'surveys'}
         wallet={wallet}
         onWalletChange={onWalletChange}
-        onClose={() => setShowSurveys(false)}
+        onClose={closeSheet}
       />
-
-      <StatsScreen
-        visible={showStats}
-        stats={stats}
-        daily={daily}
-        onClose={() => setShowStats(false)}
-      />
-
-      <FriendsScreen
-        visible={showFriends}
-        stats={stats}
-        onClose={() => setShowFriends(false)}
-      />
+      <StatsScreen visible={sheet === 'stats'} stats={stats} daily={daily} onClose={closeSheet} />
+      <FriendsScreen visible={sheet === 'friends'} stats={stats} onClose={closeSheet} />
 
       <Confetti burstKey={confettiKey} />
     </View>
@@ -975,148 +731,106 @@ export default function App(): React.JSX.Element {
   const [screen, setScreen] = useState<AppScreen>('loading');
   const [user, setUser] = useState<User | null>(null);
   const [wage, setWage] = useState<number | null>(null);
-  const [stats, setStats] = useState<LifetimeStats>(emptyStats());
-  const [wallet, setWallet] = useState<Wallet>(emptyWallet());
-  const [daily, setDaily] = useState<DailyStore>(emptyDaily());
-  const [busy, setBusy] = useState<boolean>(false);
+  const [stats, setStats] = useState<LifetimeStats>(emptyStats);
+  const [wallet, setWallet] = useState<Wallet>(emptyWallet);
+  const [daily, setDaily] = useState<DailyStore>(emptyDaily);
+  const [busy, setBusy] = useState(false);
 
+  // One batched read of everything on launch.
   useEffect(() => {
     (async (): Promise<void> => {
       try {
-        const entries = await AsyncStorage.multiGet([
-          STORAGE_KEYS.user,
-          STORAGE_KEYS.wage,
-          STORAGE_KEYS.stats,
-          STORAGE_KEYS.wallet,
-          STORAGE_KEYS.daily,
-          STORAGE_KEYS.currency,
-        ]);
-        const map = Object.fromEntries(entries) as Record<string, string | null>;
+        const map = await AsyncStorage.getMany([...ALL_STORAGE_KEYS]);
 
         const storedCurrency = map[STORAGE_KEYS.currency];
         if (storedCurrency) setCurrency(storedCurrency);
 
-        const loadedWage = map[STORAGE_KEYS.wage]
-          ? parseFloat(map[STORAGE_KEYS.wage] as string)
-          : null;
-        setStats(parseJSON<LifetimeStats>(map[STORAGE_KEYS.stats], emptyStats()));
-        setWallet(parseJSON<Wallet>(map[STORAGE_KEYS.wallet], emptyWallet()));
-        setDaily(parseJSON<DailyStore>(map[STORAGE_KEYS.daily], emptyDaily()));
+        setStats(parseJSON(map[STORAGE_KEYS.stats], emptyStats()));
+        setWallet(parseJSON(map[STORAGE_KEYS.wallet], emptyWallet()));
+        setDaily(parseJSON(map[STORAGE_KEYS.daily], emptyDaily()));
 
         // Prefer a live server session (Apple/Google); fall back to local user.
         const sessionUser = await getCurrentUser();
-        const localUser = parseJSON<User | null>(map[STORAGE_KEYS.user], null);
-        const loadedUser = sessionUser ?? localUser;
+        const loadedUser = sessionUser ?? parseJSON<User | null>(map[STORAGE_KEYS.user], null);
+        if (!loadedUser) return setScreen('auth');
 
-        if (!loadedUser) {
-          setScreen('auth');
-        } else {
-          setUser(loadedUser);
-          if (sessionUser) {
-            await AsyncStorage.setItem(
-              STORAGE_KEYS.user,
-              JSON.stringify(sessionUser),
-            );
-          }
-          if (loadedWage && loadedWage > 0) {
-            setWage(loadedWage);
-            setScreen('main');
-          } else {
-            setScreen('wage');
-          }
-        }
+        setUser(loadedUser);
+        if (sessionUser) save([[STORAGE_KEYS.user, sessionUser]]);
+
+        const loadedWage = parseWage(map[STORAGE_KEYS.wage] ?? '');
+        setWage(loadedWage);
+        setScreen(loadedWage === null ? 'wage' : 'main');
       } catch {
         setScreen('auth');
       }
     })();
   }, []);
 
+  /** After sign-in: go to the tracker if a wage is already set. */
+  const enterAs = useCallback(
+    (u: User): void => {
+      setUser(u);
+      setScreen(wage === null ? 'wage' : 'main');
+      save([[STORAGE_KEYS.user, u]]);
+    },
+    [wage],
+  );
+
   const handleSocial = useCallback(
     async (provider: 'apple' | 'google'): Promise<void> => {
       setBusy(true);
       try {
-        const signedIn =
-          provider === 'apple'
-            ? await signInWithApple()
-            : await signInWithGoogle();
-        setUser(signedIn);
-        setScreen(wage && wage > 0 ? 'main' : 'wage');
-        await AsyncStorage.setItem(
-          STORAGE_KEYS.user,
-          JSON.stringify(signedIn),
-        );
+        enterAs(await (provider === 'apple' ? signInWithApple() : signInWithGoogle()));
       } catch (e) {
-        const msg =
-          e instanceof AuthError
-            ? e.message
-            : 'Sign-in failed. Please try again.';
-        if (msg !== 'Sign-in cancelled.') {
-          Alert.alert('Sign-in', msg);
-        }
+        const msg = e instanceof AuthError ? e.message : 'Sign-in failed. Please try again.';
+        if (msg !== 'Sign-in cancelled.') Alert.alert('Sign-in', msg);
       } finally {
         setBusy(false);
       }
     },
-    [wage],
+    [enterAs],
   );
 
   const handleSignUp = useCallback(
-    async (name: string, email: string, provider: AuthProvider): Promise<void> => {
-      const newUser = makeUser(name, email, provider);
-      setUser(newUser);
-      setScreen(wage && wage > 0 ? 'main' : 'wage');
-      try {
-        await AsyncStorage.setItem(STORAGE_KEYS.user, JSON.stringify(newUser));
-      } catch {
-        /* non-fatal */
-      }
-    },
-    [wage],
+    (name: string, email: string): void => enterAs(makeUser(name, email, 'local')),
+    [enterAs],
   );
 
-  const handleSaveWage = useCallback(
-    async (value: number, currencySymbol: string): Promise<void> => {
-      setCurrency(currencySymbol);
-      setWage(value);
-      setScreen('main');
-      try {
-        await AsyncStorage.multiSet([
-          [STORAGE_KEYS.wage, String(value)],
-          [STORAGE_KEYS.currency, currencySymbol],
-        ]);
-      } catch {
-        /* non-fatal */
-      }
-    },
-    [],
-  );
+  const handleSaveWage = useCallback((value: number, currencySymbol: string): void => {
+    setCurrency(currencySymbol);
+    setWage(value);
+    setScreen('main');
+    save([
+      [STORAGE_KEYS.wage, String(value)],
+      [STORAGE_KEYS.currency, currencySymbol],
+    ]);
+  }, []);
 
   const handleFinishSession = useCallback(
-    async (result: SessionResult): Promise<void> => {
-      const next = addSession(stats, result);
+    (result: SessionResult): void => {
+      const nextStats = addSession(stats, result);
       const nextDaily = addToDaily(daily, result);
-      setStats(next);
+      setStats(nextStats);
       setDaily(nextDaily);
-      syncMyStats(next); // fire-and-forget: updates the friends leaderboard
-      try {
-        await AsyncStorage.multiSet([
-          [STORAGE_KEYS.stats, JSON.stringify(next)],
-          [STORAGE_KEYS.daily, JSON.stringify(nextDaily)],
-        ]);
-      } catch {
-        /* non-fatal */
-      }
+      syncMyStats(nextStats); // fire-and-forget: updates the friends leaderboard
+      save([
+        [STORAGE_KEYS.stats, nextStats],
+        [STORAGE_KEYS.daily, nextDaily],
+      ]);
     },
     [stats, daily],
   );
 
-  const handleWalletChange = useCallback(async (w: Wallet): Promise<void> => {
+  const handleWalletChange = useCallback((w: Wallet): void => {
     setWallet(w);
-    try {
-      await AsyncStorage.setItem(STORAGE_KEYS.wallet, JSON.stringify(w));
-    } catch {
-      /* non-fatal */
-    }
+    save([[STORAGE_KEYS.wallet, w]]);
+  }, []);
+
+  const handleLogout = useCallback(async (): Promise<void> => {
+    setUser(null);
+    setScreen('auth');
+    await authSignOut().catch(() => {});
+    await AsyncStorage.removeItem(STORAGE_KEYS.user).catch(() => {});
   }, []);
 
   const handleDeleteAccount = useCallback(async (): Promise<void> => {
@@ -1125,50 +839,24 @@ export default function App(): React.JSX.Element {
     setStats(emptyStats());
     setWallet(emptyWallet());
     setDaily(emptyDaily());
+    setCurrency(CURRENCIES[0].symbol);
     setScreen('auth');
-    try {
-      await authSignOut();
-      await AsyncStorage.multiRemove([
-        STORAGE_KEYS.user,
-        STORAGE_KEYS.wage,
-        STORAGE_KEYS.stats,
-        STORAGE_KEYS.wallet,
-        STORAGE_KEYS.daily,
-      ]);
-    } catch {
-      /* non-fatal */
-    }
-  }, []);
-
-  const handleLogout = useCallback(async (): Promise<void> => {
-    setUser(null);
-    setScreen('auth');
-    try {
-      await authSignOut();
-      await AsyncStorage.removeItem(STORAGE_KEYS.user);
-    } catch {
-      /* non-fatal */
-    }
+    await authSignOut().catch(() => {});
+    // Wipe EVERY key we own (previously currency + blocked list survived).
+    await AsyncStorage.removeMany([...ALL_STORAGE_KEYS]).catch(() => {});
   }, []);
 
   return (
-    <View style={styles.root}>
+    <View style={ui.root}>
       <StatusBar barStyle="dark-content" />
       {screen === 'loading' && (
-        <View style={[styles.flex, styles.center]}>
+        <View style={[ui.flex, styles.center]}>
           <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
       )}
-      {screen === 'auth' && (
-        <AuthScreen
-          onSignUp={handleSignUp}
-          onApple={() => handleSocial('apple')}
-          onGoogle={() => handleSocial('google')}
-          busy={busy}
-        />
-      )}
+      {screen === 'auth' && <AuthScreen onSignUp={handleSignUp} onSocial={handleSocial} busy={busy} />}
       {screen === 'wage' && (
-        <SafeAreaView style={styles.flex}>
+        <SafeAreaView style={ui.flex}>
           <WageForm
             title="Set your wage"
             subtitle="Enter it once — we’ll remember it every time you open bloop."
@@ -1199,19 +887,19 @@ export default function App(): React.JSX.Element {
 /*                                  Styles                                     */
 /* -------------------------------------------------------------------------- */
 
+const labelCaps = {
+  color: COLORS.subtle,
+  textTransform: 'uppercase',
+  letterSpacing: 0.5,
+} as const;
+
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: COLORS.background },
-  flex: { flex: 1 },
   center: { alignItems: 'center', justifyContent: 'center' },
+  white: { color: COLORS.white },
+  mintBg: { backgroundColor: COLORS.mintBg },
 
   emoji: { fontSize: 44, textAlign: 'center', marginBottom: SPACING.sm },
-  title: {
-    fontSize: 40,
-    fontWeight: '800',
-    color: COLORS.ink,
-    textAlign: 'center',
-    letterSpacing: -1,
-  },
+  title: { fontSize: 40, fontWeight: '800', color: COLORS.ink, textAlign: 'center', letterSpacing: -1 },
   subtitle: {
     fontSize: 15,
     color: COLORS.subtle,
@@ -1223,11 +911,7 @@ const styles = StyleSheet.create({
   },
 
   /* Auth */
-  authScroll: {
-    paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.xl,
-    paddingBottom: SPACING.lg,
-  },
+  authScroll: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.xl, paddingBottom: SPACING.lg },
   inputCard: {
     backgroundColor: COLORS.card,
     borderRadius: 22,
@@ -1235,25 +919,9 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.lg,
     ...STICKER,
   },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.subtle,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: SPACING.xs,
-  },
-  textField: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: COLORS.ink,
-    paddingVertical: SPACING.xs,
-  },
-  fieldDivider: {
-    height: 1,
-    backgroundColor: COLORS.hairline,
-    marginVertical: SPACING.md,
-  },
+  inputLabel: { ...labelCaps, fontSize: 13, fontWeight: '600', marginBottom: SPACING.xs },
+  textField: { fontSize: 22, fontWeight: '600', color: COLORS.ink, paddingVertical: SPACING.xs },
+  fieldDivider: { height: 1, backgroundColor: COLORS.hairline, marginVertical: SPACING.md },
   inputRow: { flexDirection: 'row', alignItems: 'center' },
   currencyPrefix: { fontSize: 34, fontWeight: '700', color: COLORS.primary },
   input: {
@@ -1273,52 +941,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     ...STICKER,
   },
-  primaryButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: '700' },
+  primaryButtonText: { color: COLORS.white, fontSize: 18, fontWeight: '700' },
   secondaryButton: { paddingVertical: SPACING.md, alignItems: 'center', marginTop: SPACING.xs },
   secondaryButtonText: { color: COLORS.subtle, fontSize: 16, fontWeight: '600' },
 
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: SPACING.lg,
-  },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: SPACING.lg },
   divider: { flex: 1, height: 1, backgroundColor: COLORS.hairline },
   dividerText: { marginHorizontal: SPACING.sm, color: COLORS.subtle, fontSize: 13 },
 
   socialButton: {
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     borderRadius: 14,
     paddingVertical: SPACING.md,
     marginBottom: SPACING.sm,
   },
-  appleButton: { backgroundColor: COLORS.black },
-  appleLogo: { color: '#FFFFFF', fontSize: 18, marginRight: SPACING.xs, marginTop: -2 },
-  appleButtonText: { color: '#FFFFFF', fontSize: 17, fontWeight: '600' },
-  googleButton: { backgroundColor: COLORS.google, borderWidth: 1, borderColor: COLORS.hairline },
-  googleLogo: {
-    color: '#4285F4',
-    fontSize: 18,
-    fontWeight: '800',
-    marginRight: SPACING.xs,
-  },
-  googleButtonText: { color: COLORS.googleText, fontSize: 17, fontWeight: '600' },
-  footnote: {
-    textAlign: 'center',
-    color: COLORS.subtle,
-    fontSize: 12,
-    marginTop: SPACING.md,
-  },
+  appleButton: { backgroundColor: COLORS.ink },
+  googleButton: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.hairline },
+  socialText: { fontSize: 17, fontWeight: '600', color: COLORS.ink },
+  googleLogo: { color: '#4285F4', fontWeight: '800' },
+  footnote: { textAlign: 'center', color: COLORS.subtle, fontSize: 12, marginTop: SPACING.md },
   authSpinner: { marginTop: SPACING.md },
 
   /* Wage form */
-  wageFormBody: {
-    flex: 1,
-    paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.xl,
-    justifyContent: 'center',
-  },
+  wageFormBody: { flex: 1, paddingHorizontal: SPACING.lg, paddingTop: SPACING.xl, justifyContent: 'center' },
   currencyRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1336,7 +981,6 @@ const styles = StyleSheet.create({
   },
   currencyPillActive: { backgroundColor: COLORS.primary },
   currencyPillText: { fontSize: 13, fontWeight: '700', color: COLORS.ink },
-  currencyPillTextActive: { color: '#FFFDF8' },
 
   /* Tracker */
   trackerContainer: {
@@ -1353,12 +997,7 @@ const styles = StyleSheet.create({
   },
   menuButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   menuIcon: { fontSize: 26, color: COLORS.ink },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: COLORS.ink,
-    letterSpacing: -0.5,
-  },
+  headerTitle: { fontSize: 24, fontWeight: '800', color: COLORS.ink, letterSpacing: -0.5 },
 
   wageStatsRow: { flexDirection: 'row', gap: SPACING.sm, marginBottom: SPACING.md },
   wageStatCard: {
@@ -1368,40 +1007,19 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.sm,
     alignItems: 'center',
-    ...STICKER,
-    borderWidth: 2.5,
-    shadowOffset: { width: 3, height: 3 },
+    ...STICKER_SM,
   },
-  wageStatCardMint: { backgroundColor: COLORS.mintBg },
-  wageStatLabel: {
-    fontSize: 11,
-    color: COLORS.subtle,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-    marginBottom: 4,
-  },
-  wageStatValue: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: COLORS.ink,
-    fontVariant: ['tabular-nums'],
-  },
+  wageStatLabel: { ...labelCaps, fontSize: 11, marginBottom: 4 },
+  wageStatValue: { fontSize: 18, fontWeight: '800', color: COLORS.ink, fontVariant: ['tabular-nums'] },
   wageStatUnit: { fontSize: 12, fontWeight: '600', color: COLORS.subtle },
-  mintText: { color: COLORS.mint },
 
-  animationWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 140,
-  },
+  animationWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 140 },
   lottie: { width: 220, height: 220 },
 
   counterCard: {
     backgroundColor: COLORS.card,
     borderRadius: 26,
-    paddingVertical: SPACING.lg,
-    paddingHorizontal: SPACING.lg,
+    padding: SPACING.lg,
     alignItems: 'center',
     marginBottom: SPACING.md,
     ...STICKER,
@@ -1415,13 +1033,7 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
     letterSpacing: 1,
   },
-  earnedLabel: {
-    fontSize: 13,
-    color: COLORS.subtle,
-    marginTop: SPACING.md,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
+  earnedLabel: { ...labelCaps, fontSize: 13, marginTop: SPACING.md },
   earnedValue: {
     fontSize: 42,
     fontWeight: '800',
@@ -1439,7 +1051,7 @@ const styles = StyleSheet.create({
   },
   startButton: { backgroundColor: COLORS.primary },
   finishButton: { backgroundColor: COLORS.accent },
-  bigButtonText: { color: '#FFFFFF', fontSize: 20, fontWeight: '800' },
+  bigButtonText: { color: COLORS.white, fontSize: 20, fontWeight: '800' },
 
   adBanner: {
     marginTop: SPACING.md,
@@ -1455,11 +1067,7 @@ const styles = StyleSheet.create({
   adBannerText: { color: COLORS.subtle, fontSize: 13, fontWeight: '600' },
 
   /* Summary modal */
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(30, 27, 46, 0.45)',
-    justifyContent: 'flex-end',
-  },
+  modalBackdrop: { flex: 1, backgroundColor: COLORS.backdrop, justifyContent: 'flex-end' },
   modalCard: {
     backgroundColor: COLORS.card,
     borderTopWidth: 3,
@@ -1483,13 +1091,7 @@ const styles = StyleSheet.create({
   modalEmoji: { fontSize: 48 },
   modalTitle: { fontSize: 26, fontWeight: '800', color: COLORS.ink, marginTop: SPACING.sm },
   modalSubtitle: { fontSize: 15, color: COLORS.subtle, marginTop: 4 },
-  statsRow: {
-    flexDirection: 'row',
-    width: '100%',
-    marginTop: SPACING.lg,
-    marginBottom: SPACING.lg,
-    gap: SPACING.md,
-  },
+  statsRow: { flexDirection: 'row', width: '100%', marginVertical: SPACING.lg, gap: SPACING.md },
   statBox: {
     flex: 1,
     backgroundColor: COLORS.background,
@@ -1497,26 +1099,13 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.lg,
     alignItems: 'center',
   },
-  statBoxAccent: { backgroundColor: COLORS.mintBg },
-  statLabel: {
-    fontSize: 12,
-    color: COLORS.subtle,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: SPACING.xs,
-  },
-  statValue: {
-    fontSize: 30,
-    fontWeight: '800',
-    color: COLORS.ink,
-    fontVariant: ['tabular-nums'],
-  },
-  statValueAccent: { color: COLORS.mint },
+  statLabel: { ...labelCaps, fontSize: 12, marginBottom: SPACING.xs },
+  statValue: { fontSize: 30, fontWeight: '800', color: COLORS.ink, fontVariant: ['tabular-nums'] },
 
   /* Edit wage modal */
   editBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(30, 27, 46, 0.45)',
+    backgroundColor: COLORS.backdrop,
     justifyContent: 'center',
     paddingHorizontal: SPACING.lg,
   },
@@ -1529,10 +1118,9 @@ const styles = StyleSheet.create({
   },
 
   /* Drawer */
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(30, 27, 46, 0.45)',
-  },
+  // absoluteFillObject no longer exists in RN 0.86 — spreading it silently
+  // produced no positioning, so the dim overlay never covered the screen.
+  overlay: { ...StyleSheet.absoluteFill, backgroundColor: COLORS.backdrop },
   drawer: {
     position: 'absolute',
     top: 0,
@@ -1556,16 +1144,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: SPACING.sm,
   },
-  avatarText: { color: '#FFFFFF', fontSize: 26, fontWeight: '800' },
+  avatarText: { color: COLORS.white, fontSize: 26, fontWeight: '800' },
   drawerName: { fontSize: 20, fontWeight: '800', color: COLORS.ink },
   drawerEmail: { fontSize: 13, color: COLORS.subtle, marginTop: 2 },
-
   drawerSectionLabel: {
+    ...labelCaps,
     fontSize: 12,
     fontWeight: '700',
-    color: COLORS.subtle,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
     marginTop: SPACING.lg,
     marginBottom: SPACING.sm,
   },
@@ -1577,16 +1162,9 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
     alignItems: 'center',
   },
-  drawerStatBoxMint: { backgroundColor: COLORS.mintBg },
-  drawerStatValue: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: COLORS.ink,
-    fontVariant: ['tabular-nums'],
-  },
+  drawerStatValue: { fontSize: 20, fontWeight: '800', color: COLORS.ink, fontVariant: ['tabular-nums'] },
   drawerStatUnit: { fontSize: 12, color: COLORS.subtle, marginTop: 2 },
   drawerHint: { fontSize: 12, color: COLORS.subtle, marginTop: SPACING.sm, textAlign: 'center' },
-
   drawerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1594,34 +1172,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.hairline,
   },
-  drawerRowDisabled: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: SPACING.md,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.hairline,
-  },
   drawerRowIcon: { fontSize: 18, marginRight: SPACING.sm, width: 24, textAlign: 'center' },
-  drawerRowText: { flex: 1, fontSize: 16, fontWeight: '600', color: COLORS.ink },
+  drawerRowText: { fontSize: 16, fontWeight: '600', color: COLORS.ink },
   drawerSubtle: { fontSize: 12, color: COLORS.subtle, marginTop: 4 },
   drawerChevron: { fontSize: 22, color: COLORS.subtle },
-  dangerText: { color: COLORS.danger },
-  soonBadge: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.primaryDark,
-    backgroundColor: COLORS.hairline,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 3,
-    borderRadius: 999,
-    overflow: 'hidden',
-  },
-  progressTrack: {
-    height: 6,
-    borderRadius: 999,
-    backgroundColor: COLORS.hairline,
-    marginTop: 6,
-    overflow: 'hidden',
-  },
-  progressFill: { height: 6, borderRadius: 999, backgroundColor: COLORS.mint },
 });

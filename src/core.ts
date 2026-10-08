@@ -48,6 +48,9 @@ export const STORAGE_KEYS = {
   currency: '@bloop:currency',
 } as const;
 
+/** Every key we own — "delete account" must wipe all of them. */
+export const ALL_STORAGE_KEYS: readonly string[] = Object.values(STORAGE_KEYS);
+
 /* ------------------------------- Types ---------------------------------- */
 
 export type AuthProvider = 'local' | 'apple' | 'google';
@@ -143,6 +146,9 @@ export const formatMoney = (amount: number): string => {
   return `${grouped}.${dec}`;
 };
 
+/** Money with the active currency symbol, e.g. "₪12.50". */
+export const money = (amount: number): string => `${CURRENCY}${formatMoney(amount)}`;
+
 /* ---------------------------- Validation -------------------------------- */
 
 /** Upper bound for a plausible hourly wage (abuse/typo guard). */
@@ -216,9 +222,9 @@ export const DEMO_OFFERS: readonly SurveyOffer[] = [
 
 /* --------------------------- Daily metrics ------------------------------ */
 /*
- * Designed for speed: per-day aggregates in a small map (max 60 keys).
- * Updating after a session is O(1); rendering a 7-day chart is O(7);
- * pruning runs only when the map exceeds the cap.
+ * Hash map  dayKey ("YYYY-MM-DD") -> DayAgg, capped at MAX_TRACKED_DAYS keys.
+ * Records (best session / best day) are kept as running maxima, so they
+ * survive pruning and cost O(1) to read.
  */
 
 export interface DayAgg {
@@ -230,6 +236,8 @@ export interface DayAgg {
 export interface DailyStore {
   days: Record<string, DayAgg>;
   bestSessionSeconds: number;
+  /** All-time best day. Optional: data saved by older builds lacks it. */
+  bestDayEarned?: number;
 }
 
 export const MAX_TRACKED_DAYS = 60;
@@ -237,13 +245,31 @@ export const MAX_TRACKED_DAYS = 60;
 export const emptyDaily = (): DailyStore => ({
   days: {},
   bestSessionSeconds: 0,
+  bestDayEarned: 0,
 });
+
+const emptyDay = (): DayAgg => ({ seconds: 0, earned: 0, sessions: 0 });
 
 /** Local-timezone YYYY-MM-DD key for a timestamp. */
 export const dayKey = (ts: number): string => {
   const d = new Date(ts);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
+
+/**
+ * Move a timestamp by whole calendar days. DST-safe: "minus 24h" skips a
+ * day after a 23-hour spring-forward day; setDate() never does.
+ */
+export const shiftDays = (ts: number, days: number): number => {
+  const d = new Date(ts);
+  d.setDate(d.getDate() + days);
+  return d.getTime();
+};
+
+/** All-time best day — O(1) for new data, one O(D) scan for legacy data. */
+export const bestDayEarned = (store: DailyStore): number =>
+  store.bestDayEarned ??
+  Object.values(store.days).reduce((m, d) => Math.max(m, d.earned), 0);
 
 /** Fold a finished session into the daily store (immutable, pruned). */
 export const addToDaily = (
@@ -253,42 +279,34 @@ export const addToDaily = (
 ): DailyStore => {
   const key = dayKey(now);
   const seconds = Math.max(0, Math.min(result.elapsedSeconds, MAX_SESSION_SECONDS));
-  const earned = Math.max(0, result.amountEarned);
-  const prev = store.days[key] ?? { seconds: 0, earned: 0, sessions: 0 };
-  const days: Record<string, DayAgg> = {
-    ...store.days,
-    [key]: {
-      seconds: prev.seconds + seconds,
-      earned: prev.earned + earned,
-      sessions: prev.sessions + 1,
-    },
+  const prev = store.days[key] ?? emptyDay();
+  const today: DayAgg = {
+    seconds: prev.seconds + seconds,
+    earned: prev.earned + Math.max(0, result.amountEarned),
+    sessions: prev.sessions + 1,
   };
-  const keys = Object.keys(days);
-  if (keys.length > MAX_TRACKED_DAYS) {
-    keys.sort();
-    for (const stale of keys.slice(0, keys.length - MAX_TRACKED_DAYS)) {
-      delete days[stale];
-    }
+  const days = { ...store.days, [key]: today };
+  // Keys are ISO dates, so lexicographic order == chronological order.
+  for (const stale of Object.keys(days).sort().slice(0, -MAX_TRACKED_DAYS)) {
+    delete days[stale];
   }
   return {
     days,
     bestSessionSeconds: Math.max(store.bestSessionSeconds, seconds),
+    bestDayEarned: Math.max(bestDayEarned(store), today.earned),
   };
 };
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Consecutive active days ending today (or yesterday if today is empty). */
 export const streakDays = (
   store: DailyStore,
   now: number = Date.now(),
 ): number => {
-  let cursor = now;
-  if (!store.days[dayKey(cursor)]) cursor -= DAY_MS;
+  let cursor = store.days[dayKey(now)] ? now : shiftDays(now, -1);
   let streak = 0;
   while (store.days[dayKey(cursor)]) {
     streak += 1;
-    cursor -= DAY_MS;
+    cursor = shiftDays(cursor, -1);
   }
   return streak;
 };
@@ -306,27 +324,16 @@ export const lastDays = (
   store: DailyStore,
   n: number,
   now: number = Date.now(),
-): ChartDay[] => {
-  const out: ChartDay[] = [];
-  for (let i = n - 1; i >= 0; i -= 1) {
-    const ts = now - i * DAY_MS;
-    out.push({
-      key: dayKey(ts),
+): ChartDay[] =>
+  Array.from({ length: n }, (_, i) => {
+    const ts = shiftDays(now, i - (n - 1));
+    const key = dayKey(ts);
+    return {
+      key,
       label: WEEKDAY_LETTERS[new Date(ts).getDay()],
-      agg: store.days[dayKey(ts)] ?? { seconds: 0, earned: 0, sessions: 0 },
-    });
-  }
-  return out;
-};
-
-/** The single best earning day on record, or null. */
-export const bestDay = (store: DailyStore): DayAgg | null => {
-  let best: DayAgg | null = null;
-  for (const agg of Object.values(store.days)) {
-    if (best === null || agg.earned > best.earned) best = agg;
-  }
-  return best;
-};
+      agg: store.days[key] ?? emptyDay(),
+    };
+  });
 
 /* ------------------------------ Usernames ------------------------------- */
 

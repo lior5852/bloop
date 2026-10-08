@@ -2,7 +2,7 @@
  * bloop — Friends: claim a username, add friends (request + approval),
  * and compete on a lifetime-earnings leaderboard. Anonymous-friendly.
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -19,8 +19,8 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { isSupabaseConfigured } from './config';
+import { COLORS, STICKER, STICKER_SM, SheetHeader, ui } from './ui';
 import {
-  ensureIdentity,
   getMyUsername,
   claimUsername,
   findUser,
@@ -33,8 +33,7 @@ import {
   type IncomingRequest,
 } from './friends';
 import {
-  CURRENCY,
-  formatMoney,
+  money,
   parseJSON,
   STORAGE_KEYS,
   type LifetimeStats,
@@ -42,32 +41,15 @@ import {
 
 const REPORT_EMAIL = 'lior5852@gmail.com';
 
-const COLORS = {
-  background: '#FDF3E3',
-  card: '#FFFDF8',
-  primary: '#F4772E',
-  mint: '#1D9E82',
-  mintBg: '#DFF5EF',
-  ink: '#1B1511',
-  subtle: '#8A7B6D',
-  hairline: '#F0E4D0',
-  gold: '#FFD166',
-} as const;
-
-const STICKER = {
-  borderWidth: 3,
-  borderColor: '#1B1511',
-  shadowColor: '#1B1511',
-  shadowOffset: { width: 4, height: 4 },
-  shadowOpacity: 1,
-  shadowRadius: 0,
-} as const;
-
 interface Props {
   visible: boolean;
   stats: LifetimeStats;
   onClose: () => void;
 }
+
+/** Show a FriendsError's message, or a generic fallback. */
+const alertError = (title: string, e: unknown, fallback = 'Something went wrong.'): void =>
+  Alert.alert(title, e instanceof FriendsError ? e.message : fallback);
 
 const FriendsScreen: React.FC<Props> = ({ visible, stats, onClose }) => {
   const configured = isSupabaseConfigured();
@@ -78,23 +60,20 @@ const FriendsScreen: React.FC<Props> = ({ visible, stats, onClose }) => {
   const [addInput, setAddInput] = useState<string>('');
   const [friends, setFriends] = useState<FriendProfile[]>([]);
   const [incoming, setIncoming] = useState<IncomingRequest[]>([]);
-  const [blocked, setBlocked] = useState<readonly string[]>([]);
+  // Set → O(1) "is blocked?" lookups (an array made every filter O(F·B)).
+  const [blocked, setBlocked] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEYS.blocked)
-      .then((raw: string | null) => setBlocked(parseJSON<string[]>(raw, [])))
+      .then((raw: string | null) => setBlocked(new Set(parseJSON<string[]>(raw, []))))
       .catch(() => {});
   }, []);
 
   const blockUser = useCallback(
-    async (userId: string, username: string): Promise<void> => {
-      const next = [...new Set([...blocked, userId])];
+    (userId: string, username: string): void => {
+      const next = new Set(blocked).add(userId);
       setBlocked(next);
-      try {
-        await AsyncStorage.setItem(STORAGE_KEYS.blocked, JSON.stringify(next));
-      } catch {
-        /* non-fatal */
-      }
+      AsyncStorage.setItem(STORAGE_KEYS.blocked, JSON.stringify([...next])).catch(() => {});
       Alert.alert('Blocked', `@${username} won't appear in your bloop anymore.`);
     },
     [blocked],
@@ -131,8 +110,7 @@ const FriendsScreen: React.FC<Props> = ({ visible, stats, onClose }) => {
     if (!configured) return;
     setLoading(true);
     try {
-      await ensureIdentity();
-      const name = await getMyUsername();
+      const name = await getMyUsername(); // also ensures an identity
       setUsername(name);
       if (name) {
         const [f, inc] = await Promise.all([listFriends(), listIncoming()]);
@@ -140,9 +118,7 @@ const FriendsScreen: React.FC<Props> = ({ visible, stats, onClose }) => {
         setIncoming(inc);
       }
     } catch (e) {
-      const msg =
-        e instanceof FriendsError ? e.message : 'Could not reach the server.';
-      Alert.alert('Friends', msg);
+      alertError('Friends', e, 'Could not reach the server.');
     } finally {
       setLoading(false);
     }
@@ -159,10 +135,7 @@ const FriendsScreen: React.FC<Props> = ({ visible, stats, onClose }) => {
       setUsername(claimed);
       Alert.alert('Welcome! 🎉', `You are @${claimed}. Now add some friends!`);
     } catch (e) {
-      Alert.alert(
-        'Username',
-        e instanceof FriendsError ? e.message : 'Something went wrong.',
-      );
+      alertError('Username', e);
     } finally {
       setBusy(false);
     }
@@ -180,10 +153,7 @@ const FriendsScreen: React.FC<Props> = ({ visible, stats, onClose }) => {
       setAddInput('');
       Alert.alert('Sent! 📨', `Request sent to @${target.username}. They need to approve it.`);
     } catch (e) {
-      Alert.alert(
-        'Add friend',
-        e instanceof FriendsError ? e.message : 'Something went wrong.',
-      );
+      alertError('Add friend', e);
     } finally {
       setBusy(false);
     }
@@ -196,10 +166,7 @@ const FriendsScreen: React.FC<Props> = ({ visible, stats, onClose }) => {
         await acceptRequest(req.id);
         await refresh();
       } catch (e) {
-        Alert.alert(
-          'Approve',
-          e instanceof FriendsError ? e.message : 'Something went wrong.',
-        );
+        alertError('Approve', e);
       } finally {
         setBusy(false);
       }
@@ -207,21 +174,21 @@ const FriendsScreen: React.FC<Props> = ({ visible, stats, onClose }) => {
     [refresh],
   );
 
-  const visibleFriends = friends.filter((f) => !blocked.includes(f.id));
-  const visibleIncoming = incoming.filter((r) => !blocked.includes(r.fromId));
+  const visibleIncoming = useMemo(
+    () => incoming.filter((r) => !blocked.has(r.fromId)),
+    [incoming, blocked],
+  );
 
-  const leaderboard: Array<FriendProfile & { me?: boolean }> = username
-    ? [
-        {
-          id: 'me',
-          username,
-          totalEarned: stats.totalEarned,
-          totalSeconds: stats.totalSeconds,
-          me: true,
-        },
-        ...visibleFriends,
-      ].sort((a, b) => b.totalEarned - a.totalEarned)
-    : [];
+  // friends arrive already sorted (desc) from the server, so "me" is placed
+  // with one O(F) insertion instead of re-sorting O(F log F) every render.
+  const leaderboard = useMemo((): Array<FriendProfile & { me?: boolean }> => {
+    if (!username) return [];
+    const rows: Array<FriendProfile & { me?: boolean }> = friends.filter((f) => !blocked.has(f.id));
+    const me = { id: 'me', username, totalEarned: stats.totalEarned, totalSeconds: stats.totalSeconds, me: true };
+    const at = rows.findIndex((f) => f.totalEarned < me.totalEarned);
+    rows.splice(at === -1 ? rows.length : at, 0, me);
+    return rows;
+  }, [friends, blocked, username, stats.totalEarned, stats.totalSeconds]);
 
   return (
     <Modal
@@ -230,15 +197,10 @@ const FriendsScreen: React.FC<Props> = ({ visible, stats, onClose }) => {
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <SafeAreaView style={styles.root}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Friends</Text>
-          <TouchableOpacity style={styles.closeButton} onPress={onClose} accessibilityLabel="Close friends">
-            <Text style={styles.closeText}>✕</Text>
-          </TouchableOpacity>
-        </View>
+      <SafeAreaView style={ui.root}>
+        <SheetHeader title="Friends" onClose={onClose} />
 
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={ui.scroll} keyboardShouldPersistTaps="handled">
           {!configured && (
             <View style={styles.cardCenter}>
               <Text style={styles.bigEmoji}>🔌</Text>
@@ -282,7 +244,7 @@ const FriendsScreen: React.FC<Props> = ({ visible, stats, onClose }) => {
             <>
               {visibleIncoming.length > 0 && (
                 <>
-                  <Text style={styles.sectionLabel}>Waiting for your approval</Text>
+                  <Text style={[ui.sectionLabel, styles.sectionGap]}>Waiting for your approval</Text>
                   {visibleIncoming.map((req) => (
                     <View key={req.id} style={styles.requestRow}>
                       <Text style={styles.requestName}>@{req.fromUsername}</Text>
@@ -309,12 +271,12 @@ const FriendsScreen: React.FC<Props> = ({ visible, stats, onClose }) => {
                 </>
               )}
 
-              <Text style={styles.sectionLabel}>Leaderboard 🏆</Text>
+              <Text style={[ui.sectionLabel, styles.sectionGap]}>Leaderboard 🏆</Text>
               <View style={styles.boardCard}>
                 {leaderboard.map((p, i) => (
                   <View
                     key={p.id}
-                    style={[styles.boardRow, p.me ? styles.boardRowMe : null, i === 0 ? styles.boardRowTop : null]}
+                    style={styles.boardRow}
                   >
                     <Text style={styles.boardRank}>
                       {i === 0 ? '👑' : `${i + 1}.`}
@@ -323,10 +285,7 @@ const FriendsScreen: React.FC<Props> = ({ visible, stats, onClose }) => {
                       @{p.username}
                       {p.me ? ' (you)' : ''}
                     </Text>
-                    <Text style={styles.boardMoney}>
-                      {CURRENCY}
-                      {formatMoney(p.totalEarned)}
-                    </Text>
+                    <Text style={styles.boardMoney}>{money(p.totalEarned)}</Text>
                     {!p.me && (
                       <TouchableOpacity
                         style={styles.moreButton}
@@ -346,7 +305,7 @@ const FriendsScreen: React.FC<Props> = ({ visible, stats, onClose }) => {
                 )}
               </View>
 
-              <Text style={styles.sectionLabel}>Add a friend</Text>
+              <Text style={[ui.sectionLabel, styles.sectionGap]}>Add a friend</Text>
               <View style={styles.addRow}>
                 <TextInput
                   style={[styles.input, styles.addInput]}
@@ -375,25 +334,6 @@ const FriendsScreen: React.FC<Props> = ({ visible, stats, onClose }) => {
 };
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: COLORS.background },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-  },
-  title: { fontSize: 24, fontWeight: '800', color: COLORS.ink },
-  closeButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: COLORS.hairline,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeText: { fontSize: 16, fontWeight: '700', color: COLORS.subtle },
-  scroll: { paddingHorizontal: 24, paddingBottom: 40 },
   spinner: { marginTop: 40 },
 
   cardCenter: {
@@ -437,26 +377,16 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: { color: '#FFFDF8', fontSize: 16, fontWeight: '800' },
 
-  sectionLabel: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: COLORS.subtle,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginTop: 20,
-    marginBottom: 10,
-  },
+  sectionGap: { marginTop: 20 },
   requestRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FFE8D6',
+    backgroundColor: COLORS.peach,
     borderRadius: 16,
     padding: 14,
     marginBottom: 10,
-    ...STICKER,
-    borderWidth: 2.5,
-    shadowOffset: { width: 3, height: 3 },
+    ...STICKER_SM,
   },
   requestName: { fontSize: 16, fontWeight: '800', color: COLORS.ink },
   approveButton: {
@@ -494,8 +424,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.hairline,
   },
-  boardRowTop: { },
-  boardRowMe: { },
   boardRank: { width: 34, fontSize: 16, fontWeight: '800', color: COLORS.ink },
   boardName: { flex: 1, fontSize: 16, fontWeight: '700', color: COLORS.ink },
   boardMoney: {
@@ -519,8 +447,8 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 13,
-    ...STICKER,
-    shadowOffset: { width: 3, height: 3 },
+    ...STICKER_SM,
+    borderWidth: 3,
   },
   footHint: {
     fontSize: 12,
@@ -531,4 +459,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default FriendsScreen;
+export default React.memo(FriendsScreen);

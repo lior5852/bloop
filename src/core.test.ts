@@ -30,7 +30,11 @@ import {
   addToDaily,
   streakDays,
   lastDays,
-  bestDay,
+  bestDayEarned,
+  shiftDays,
+  money,
+  ALL_STORAGE_KEYS,
+  STORAGE_KEYS,
   dayKey,
   MAX_TRACKED_DAYS,
   isValidUsername,
@@ -255,12 +259,56 @@ test('lastDays: returns n entries oldest-first with zero-fill', () => {
   assert.equal(week[0].agg.sessions, 0);
 });
 
-test('bestDay: finds the top earning day', () => {
+test('bestDayEarned: finds the top earning day', () => {
   let d: DailyStore = emptyDaily();
   d = addToDaily(d, { elapsedSeconds: 60, amountEarned: 3 }, T0 - DAY);
   d = addToDaily(d, { elapsedSeconds: 60, amountEarned: 9 }, T0);
-  assert.equal(bestDay(d)!.earned, 9);
-  assert.equal(bestDay(emptyDaily()), null);
+  assert.equal(bestDayEarned(d), 9);
+  assert.equal(bestDayEarned(emptyDaily()), 0);
+});
+
+test('bestDayEarned: record survives pruning of old days', () => {
+  let d: DailyStore = emptyDaily();
+  d = addToDaily(d, { elapsedSeconds: 60, amountEarned: 50 }, T0);
+  for (let i = 1; i <= MAX_TRACKED_DAYS + 5; i += 1) {
+    d = addToDaily(d, { elapsedSeconds: 60, amountEarned: 1 }, T0 + i * DAY);
+  }
+  assert.equal(d.days[dayKey(T0)], undefined); // pruned
+  assert.equal(bestDayEarned(d), 50); // record kept
+});
+
+test('bestDayEarned: legacy store without the field falls back to a scan', () => {
+  const legacy: DailyStore = {
+    days: { '2026-10-01': { seconds: 60, earned: 7, sessions: 1 } },
+    bestSessionSeconds: 60,
+  };
+  assert.equal(bestDayEarned(legacy), 7);
+  assert.equal(addToDaily(legacy, { elapsedSeconds: 60, amountEarned: 1 }, T0).bestDayEarned, 7);
+});
+
+test('streak + lastDays: DST spring-forward day is not skipped', () => {
+  const prevTZ = process.env.TZ;
+  process.env.TZ = 'Asia/Jerusalem'; // 2026-03-27 is a 23-hour day
+  try {
+    const at = (day: number, h: number, m = 0): number =>
+      new Date(2026, 2, day, h, m).getTime();
+    let d: DailyStore = emptyDaily();
+    d = addToDaily(d, { elapsedSeconds: 60, amountEarned: 1 }, at(26, 12));
+    d = addToDaily(d, { elapsedSeconds: 60, amountEarned: 1 }, at(27, 12));
+    d = addToDaily(d, { elapsedSeconds: 60, amountEarned: 1 }, at(28, 0, 30));
+    assert.equal(streakDays(d, at(28, 0, 30)), 3);
+    const keys = lastDays(d, 3, at(28, 0, 30)).map((x) => x.key);
+    assert.deepEqual(keys, ['2026-03-26', '2026-03-27', '2026-03-28']);
+    assert.equal(dayKey(shiftDays(at(28, 0, 30), -1)), '2026-03-27');
+  } finally {
+    process.env.TZ = prevTZ;
+  }
+});
+
+test('money + ALL_STORAGE_KEYS', () => {
+  setCurrency('₪');
+  assert.equal(money(1234.5), '₪1,234.50');
+  assert.equal(ALL_STORAGE_KEYS.length, Object.keys(STORAGE_KEYS).length);
 });
 
 /* ------------------------------ Usernames ------------------------------- */

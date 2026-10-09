@@ -23,7 +23,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 
-import { COLORS, STICKER, STICKER_SM, SheetHeader, ProgressBar, ui } from './ui';
+import { SheetHeader, ProgressBar, useThemed, stickerOf, stickerSmOf, type ThemeColors } from './ui';
 import {
   CURRENCY,
   WITHDRAW_THRESHOLD,
@@ -52,6 +52,7 @@ interface Props {
 }
 
 const SurveysScreen: React.FC<Props> = ({ visible, wallet, onWalletChange, onClose }) => {
+  const { styles, ui, colors: COLORS } = useThemed(makeStyles);
   const [busyOffer, setBusyOffer] = useState<string | null>(null);
   const [doneOffers, setDoneOffers] = useState<ReadonlySet<string>>(new Set());
 
@@ -146,7 +147,10 @@ const SurveysScreen: React.FC<Props> = ({ visible, wallet, onWalletChange, onClo
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (COLORS: ThemeColors) => {
+  const STICKER = stickerOf(COLORS);
+  const STICKER_SM = stickerSmOf(COLORS);
+  return StyleSheet.create({
   balanceCard: {
     backgroundColor: COLORS.card,
     borderRadius: 24,
@@ -196,6 +200,7 @@ const styles = StyleSheet.create({
   rewardPill: { backgroundColor: COLORS.mintBg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
   rewardDone: { backgroundColor: COLORS.hairline },
   rewardText: { fontSize: 14, fontWeight: '800', color: COLORS.mint },
-});
+  });
+};
 
 export default React.memo(SurveysScreen);

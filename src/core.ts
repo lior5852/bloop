@@ -46,6 +46,7 @@ export const STORAGE_KEYS = {
   daily: '@bloop:dailyStats',
   blocked: '@bloop:blockedUsers',
   currency: '@bloop:currency',
+  reminder: '@bloop:reminder',
 } as const;
 
 /** Every key we own — "delete account" must wipe all of them. */

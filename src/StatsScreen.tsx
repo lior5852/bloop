@@ -5,7 +5,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Modal, ScrollView, SafeAreaView } from 'react-native';
 
-import { COLORS, STICKER, STICKER_SM, SheetHeader, ui } from './ui';
+import { SheetHeader, useThemed, stickerOf, stickerSmOf, type ThemeColors } from './ui';
 import {
   money,
   formatTime,
@@ -27,6 +27,7 @@ interface Props {
 }
 
 const StatsScreen: React.FC<Props> = ({ visible, stats, daily, onClose }) => {
+  const { styles, ui, colors: COLORS } = useThemed(makeStyles);
   const streak = streakDays(daily);
   const week = lastDays(daily, 7);
   let weekMax = 1;
@@ -105,7 +106,10 @@ const StatsScreen: React.FC<Props> = ({ visible, stats, daily, onClose }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (COLORS: ThemeColors) => {
+  const STICKER = stickerOf(COLORS);
+  const STICKER_SM = stickerSmOf(COLORS);
+  return StyleSheet.create({
   streakCard: {
     backgroundColor: COLORS.card,
     borderRadius: 22,
@@ -156,7 +160,8 @@ const styles = StyleSheet.create({
   statEmoji: { fontSize: 24 },
   statValue: { fontSize: 22, fontWeight: '800', color: COLORS.ink, marginTop: 4, fontVariant: ['tabular-nums'] },
   statLabel: { fontSize: 12, fontWeight: '600', color: COLORS.subtle, marginTop: 2 },
-});
+  });
+};
 
 // memo: only re-render when stats/daily/visibility actually change.
 export default React.memo(StatsScreen);

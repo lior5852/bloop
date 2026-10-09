@@ -19,7 +19,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { isSupabaseConfigured } from './config';
-import { COLORS, STICKER, STICKER_SM, SheetHeader, ui } from './ui';
+import { SheetHeader, useThemed, stickerOf, stickerSmOf, type ThemeColors } from './ui';
 import {
   getMyUsername,
   claimUsername,
@@ -52,6 +52,7 @@ const alertError = (title: string, e: unknown, fallback = 'Something went wrong.
   Alert.alert(title, e instanceof FriendsError ? e.message : fallback);
 
 const FriendsScreen: React.FC<Props> = ({ visible, stats, onClose }) => {
+  const { styles, ui, colors: COLORS } = useThemed(makeStyles);
   const configured = isSupabaseConfigured();
   const [loading, setLoading] = useState<boolean>(false);
   const [busy, setBusy] = useState<boolean>(false);
@@ -333,7 +334,10 @@ const FriendsScreen: React.FC<Props> = ({ visible, stats, onClose }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (COLORS: ThemeColors) => {
+  const STICKER = stickerOf(COLORS);
+  const STICKER_SM = stickerSmOf(COLORS);
+  return StyleSheet.create({
   spinner: { marginTop: 40 },
 
   cardCenter: {
@@ -457,6 +461,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 10,
   },
-});
+  });
+};
 
 export default React.memo(FriendsScreen);

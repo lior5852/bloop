@@ -23,6 +23,7 @@ import LottieView from 'lottie-react-native';
 import SurveysScreen from './src/SurveysScreen';
 import StatsScreen from './src/StatsScreen';
 import FriendsScreen from './src/FriendsScreen';
+import ReminderScreen from './src/ReminderScreen';
 import { syncMyStats } from './src/friends';
 import { SOCIAL_LOGIN_ENABLED } from './src/config';
 import {
@@ -34,7 +35,16 @@ import {
   getCurrentUser,
   AuthError,
 } from './src/auth';
-import { COLORS, STICKER, STICKER_SM, SPACING, haptic, ProgressBar, ui } from './src/ui';
+import {
+  SPACING,
+  haptic,
+  ProgressBar,
+  ThemeProvider,
+  useThemed,
+  stickerOf,
+  stickerSmOf,
+  type ThemeColors,
+} from './src/ui';
 import {
   CURRENCY,
   CURRENCIES,
@@ -75,7 +85,7 @@ const DRAWER_WIDTH = Math.min(320, SCREEN_WIDTH * 0.82);
 
 type AppScreen = 'loading' | 'auth' | 'wage' | 'main';
 /** Which full-screen sheet is open — they are mutually exclusive. */
-type Sheet = 'none' | 'wage' | 'surveys' | 'stats' | 'friends';
+type Sheet = 'none' | 'wage' | 'surveys' | 'stats' | 'friends' | 'reminder';
 
 /**
  * Persist key/value pairs in ONE batched write; strings stored raw, the rest
@@ -95,6 +105,7 @@ const save = (pairs: Array<[string, unknown]>): void => {
  * needs no asset and scales crisply. */
 
 const Mascot: React.FC<{ size?: number }> = ({ size = 46 }) => {
+  const { colors: COLORS } = useThemed();
   const k = size / 46;
   return (
     <View
@@ -259,6 +270,7 @@ const AuthScreen: React.FC<AuthProps> = ({
   onSocial,
   busy,
 }) => {
+  const { styles, ui, colors: COLORS } = useThemed(makeStyles);
   const [mode, setMode] = useState<'signup' | 'login'>('signup');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -416,6 +428,7 @@ const WageForm: React.FC<WageFormProps> = ({
   onSubmit,
   onCancel,
 }) => {
+  const { styles, colors: COLORS } = useThemed(makeStyles);
   const [wage, setWage] = useState(initialValue);
   const [symbol, setSymbol] = useState(CURRENCY);
 
@@ -490,7 +503,9 @@ const SummaryModal: React.FC<{
   visible: boolean;
   result: SessionResult | null;
   onClose: () => void;
-}> = ({ visible, result, onClose }) => (
+}> = ({ visible, result, onClose }) => {
+  const { styles, ui } = useThemed(makeStyles);
+  return (
   <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
     <View style={styles.modalBackdrop}>
       <View style={styles.modalCard}>
@@ -514,7 +529,8 @@ const SummaryModal: React.FC<{
       </View>
     </View>
   </Modal>
-);
+  );
+};
 
 /* -------------------------------------------------------------------------- */
 /*                                  Drawer                                     */
@@ -549,6 +565,7 @@ const Drawer: React.FC<DrawerProps> = ({
   onDeleteAccount,
   onLogout,
 }) => {
+  const { styles, ui, isNight, toggle } = useThemed(makeStyles);
   const progress = useRef(new Animated.Value(0)).current; // 0 = closed, 1 = open
   const [mounted, setMounted] = useState(open);
 
@@ -567,6 +584,15 @@ const Drawer: React.FC<DrawerProps> = ({
     { icon: '📈', label: 'My stats', onPress: () => onOpenSheet('stats') },
     { icon: '👥', label: 'Friends & leaderboard', onPress: () => onOpenSheet('friends') },
     { icon: '✏️', label: 'Edit hourly wage', onPress: () => onOpenSheet('wage') },
+    { icon: '⏰', label: "Poop o'clock reminder", onPress: () => onOpenSheet('reminder') },
+    {
+      icon: isNight ? '☀️' : '🌙',
+      label: isNight ? 'Day mode' : 'Night mode',
+      onPress: () => {
+        haptic.light();
+        toggle();
+      },
+    },
     {
       icon: '📝',
       label: 'Surveys & rewards',
@@ -647,6 +673,7 @@ const Tracker: React.FC<{
   hourlyWage: number;
   onFinish: (result: SessionResult) => void;
 }> = ({ hourlyWage, onFinish }) => {
+  const { styles } = useThemed(makeStyles);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const pulse = useRef(new Animated.Value(1)).current;
@@ -748,6 +775,7 @@ const MainScreen: React.FC<MainProps> = ({
   onDeleteAccount,
   onLogout,
 }) => {
+  const { styles, ui } = useThemed(makeStyles);
   const [summary, setSummary] = useState<SessionResult | null>(null);
   const [showSummary, setShowSummary] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -903,6 +931,7 @@ const MainScreen: React.FC<MainProps> = ({
       />
       <StatsScreen visible={sheet === 'stats'} stats={stats} daily={daily} onClose={closeSheet} />
       <FriendsScreen visible={sheet === 'friends'} stats={stats} onClose={closeSheet} />
+      <ReminderScreen visible={sheet === 'reminder'} onClose={closeSheet} />
 
       <Confetti burstKey={confettiKey} />
     </View>
@@ -914,6 +943,15 @@ const MainScreen: React.FC<MainProps> = ({
 /* -------------------------------------------------------------------------- */
 
 export default function App(): React.JSX.Element {
+  return (
+    <ThemeProvider>
+      <AppRoot />
+    </ThemeProvider>
+  );
+}
+
+function AppRoot(): React.JSX.Element {
+  const { ui, colors, isNight, styles } = useThemed(makeStyles);
   const [screen, setScreen] = useState<AppScreen>('loading');
   const [user, setUser] = useState<User | null>(null);
   const [wage, setWage] = useState<number | null>(null);
@@ -1063,10 +1101,10 @@ export default function App(): React.JSX.Element {
 
   return (
     <View style={ui.root}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isNight ? 'light-content' : 'dark-content'} />
       {screen === 'loading' && (
         <View style={[ui.flex, styles.center]}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       )}
       {screen === 'auth' && (
@@ -1110,13 +1148,16 @@ export default function App(): React.JSX.Element {
 /*                                  Styles                                     */
 /* -------------------------------------------------------------------------- */
 
-const labelCaps = {
+const labelCapsOf = (COLORS: ThemeColors) => ({
   color: COLORS.subtle,
   textTransform: 'uppercase',
   letterSpacing: 0.5,
-} as const;
+}) as const;
 
-const styles = StyleSheet.create({
+const makeStyles = (COLORS: ThemeColors) => {
+  const STICKER = stickerOf(COLORS);
+  const STICKER_SM = stickerSmOf(COLORS);
+  return StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center' },
   white: { color: COLORS.white },
   mintBg: { backgroundColor: COLORS.mintBg },
@@ -1155,7 +1196,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.lg,
     ...STICKER,
   },
-  inputLabel: { ...labelCaps, fontSize: 13, fontWeight: '600', marginBottom: SPACING.xs },
+  inputLabel: { ...labelCapsOf(COLORS), fontSize: 13, fontWeight: '600', marginBottom: SPACING.xs },
   textField: { fontSize: 22, fontWeight: '600', color: COLORS.ink, paddingVertical: SPACING.xs },
   fieldDivider: { height: 1, backgroundColor: COLORS.hairline, marginVertical: SPACING.md },
   inputRow: { flexDirection: 'row', alignItems: 'center' },
@@ -1262,7 +1303,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     ...STICKER_SM,
   },
-  wageStatLabel: { ...labelCaps, fontSize: 11, marginBottom: 4 },
+  wageStatLabel: { ...labelCapsOf(COLORS), fontSize: 11, marginBottom: 4 },
   wageStatValue: { fontSize: 18, fontWeight: '800', color: COLORS.ink, fontVariant: ['tabular-nums'] },
   wageStatUnit: { fontSize: 12, fontWeight: '600', color: COLORS.subtle },
 
@@ -1286,7 +1327,7 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
     letterSpacing: 1,
   },
-  earnedLabel: { ...labelCaps, fontSize: 13, marginTop: SPACING.md },
+  earnedLabel: { ...labelCapsOf(COLORS), fontSize: 13, marginTop: SPACING.md },
   earnedValue: {
     fontSize: 42,
     fontWeight: '800',
@@ -1352,7 +1393,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.lg,
     alignItems: 'center',
   },
-  statLabel: { ...labelCaps, fontSize: 12, marginBottom: SPACING.xs },
+  statLabel: { ...labelCapsOf(COLORS), fontSize: 12, marginBottom: SPACING.xs },
   statValue: { fontSize: 30, fontWeight: '800', color: COLORS.ink, fontVariant: ['tabular-nums'] },
 
   /* Edit wage modal */
@@ -1401,7 +1442,7 @@ const styles = StyleSheet.create({
   drawerName: { fontSize: 20, fontWeight: '800', color: COLORS.ink },
   drawerEmail: { fontSize: 13, color: COLORS.subtle, marginTop: 2 },
   drawerSectionLabel: {
-    ...labelCaps,
+    ...labelCapsOf(COLORS),
     fontSize: 12,
     fontWeight: '700',
     marginTop: SPACING.lg,
@@ -1429,4 +1470,5 @@ const styles = StyleSheet.create({
   drawerRowText: { fontSize: 16, fontWeight: '600', color: COLORS.ink },
   drawerSubtle: { fontSize: 12, color: COLORS.subtle, marginTop: 4 },
   drawerChevron: { fontSize: 22, color: COLORS.subtle },
-});
+  });
+};

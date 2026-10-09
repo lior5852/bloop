@@ -42,6 +42,10 @@ import {
   normalizeUsername,
   CURRENCIES,
   setCurrency,
+  buildLeaderboard,
+  SESSION_PROMPT_SECONDS,
+  STILL_THERE_COUNTDOWN,
+  type PublicProfile,
   type LifetimeStats,
   type Wallet,
   type DailyStore,
@@ -340,6 +344,55 @@ test('currency: validates against the known list', async () => {
   setCurrency('₪');
   assert.equal(core.CURRENCY, '₪');
   assert.ok(CURRENCIES.length >= 4);
+});
+
+/* ----------------------------- Leaderboard ------------------------------ */
+
+const P = (id: string, username: string, earned: number, secs = 0): PublicProfile => ({
+  id,
+  username,
+  totalEarned: earned,
+  totalSeconds: secs,
+});
+
+test('buildLeaderboard: sorts by earnings desc with me flagged', () => {
+  const board = buildLeaderboard(P('me', 'li', 50), [
+    P('a', 'alice', 120),
+    P('b', 'bob', 10),
+  ]);
+  assert.deepEqual(
+    board.map((e) => e.username),
+    ['alice', 'li', 'bob'],
+  );
+  assert.equal(board[1].me, true);
+  assert.equal(board[0].me, undefined);
+});
+
+test('buildLeaderboard: blocked friends never appear', () => {
+  const board = buildLeaderboard(P('me', 'li', 5), [P('a', 'troll', 999)], ['a']);
+  assert.deepEqual(board.map((e) => e.username), ['li']);
+});
+
+test('buildLeaderboard: ties break by time then name (stable ranks)', () => {
+  const board = buildLeaderboard(null, [
+    P('a', 'zed', 10, 100),
+    P('b', 'amy', 10, 100),
+    P('c', 'cat', 10, 500),
+  ]);
+  assert.deepEqual(board.map((e) => e.username), ['cat', 'amy', 'zed']);
+});
+
+test('buildLeaderboard: works with no account (guest, null me)', () => {
+  const board = buildLeaderboard(null, [P('a', 'alice', 1)]);
+  assert.equal(board.length, 1);
+});
+
+/* ---------------------------- Session guard ----------------------------- */
+
+test('still-there guard: sane thresholds', () => {
+  assert.equal(SESSION_PROMPT_SECONDS, 40 * 60);
+  assert.ok(STILL_THERE_COUNTDOWN >= 5 && STILL_THERE_COUNTDOWN <= 30);
+  assert.ok(SESSION_PROMPT_SECONDS < 4 * 3600);
 });
 
 /* --------------------------- Flow: full loop ---------------------------- */

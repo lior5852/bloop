@@ -24,8 +24,10 @@ import SurveysScreen from './src/SurveysScreen';
 import StatsScreen from './src/StatsScreen';
 import FriendsScreen from './src/FriendsScreen';
 import ReminderScreen from './src/ReminderScreen';
+import SettingsScreen from './src/SettingsScreen';
 import { syncMyStats } from './src/friends';
-import { SOCIAL_LOGIN_ENABLED } from './src/config';
+import { notifyStillThere } from './src/reminders';
+import { SOCIAL_LOGIN_ENABLED, APPLE_LOGIN_ENABLED, GOOGLE_LOGIN_ENABLED } from './src/config';
 import {
   signInWithApple,
   signInWithGoogle,
@@ -52,6 +54,8 @@ import {
   STORAGE_KEYS,
   ALL_STORAGE_KEYS,
   WITHDRAW_THRESHOLD,
+  SESSION_PROMPT_SECONDS,
+  STILL_THERE_COUNTDOWN,
   earningsFor,
   addSession,
   addToDaily,
@@ -85,7 +89,7 @@ const DRAWER_WIDTH = Math.min(320, SCREEN_WIDTH * 0.82);
 
 type AppScreen = 'loading' | 'auth' | 'wage' | 'main';
 /** Which full-screen sheet is open — they are mutually exclusive. */
-type Sheet = 'none' | 'wage' | 'surveys' | 'stats' | 'friends' | 'reminder';
+type Sheet = 'none' | 'wage' | 'surveys' | 'stats' | 'friends' | 'reminder' | 'settings';
 
 /**
  * Persist key/value pairs in ONE batched write; strings stored raw, the rest
@@ -375,6 +379,7 @@ const AuthScreen: React.FC<AuthProps> = ({
                 <Text style={styles.dividerText}>or</Text>
                 <View style={styles.divider} />
               </View>
+              {APPLE_LOGIN_ENABLED && (
               <TouchableOpacity
                 style={[styles.socialButton, styles.appleButton]}
                 disabled={busy}
@@ -382,6 +387,8 @@ const AuthScreen: React.FC<AuthProps> = ({
               >
                 <Text style={[styles.socialText, styles.white]}> Continue with Apple</Text>
               </TouchableOpacity>
+              )}
+              {GOOGLE_LOGIN_ENABLED && (
               <TouchableOpacity
                 style={[styles.socialButton, styles.googleButton]}
                 disabled={busy}
@@ -391,6 +398,7 @@ const AuthScreen: React.FC<AuthProps> = ({
                   <Text style={styles.googleLogo}>G </Text>Continue with Google
                 </Text>
               </TouchableOpacity>
+              )}
             </>
           )}
 
@@ -585,6 +593,7 @@ const Drawer: React.FC<DrawerProps> = ({
     { icon: '👥', label: 'Friends & leaderboard', onPress: () => onOpenSheet('friends') },
     { icon: '✏️', label: 'Edit hourly wage', onPress: () => onOpenSheet('wage') },
     { icon: '⏰', label: "Poop o'clock reminder", onPress: () => onOpenSheet('reminder') },
+    { icon: '⚙️', label: 'Settings', onPress: () => onOpenSheet('settings') },
     {
       icon: isNight ? '☀️' : '🌙',
       label: isNight ? 'Day mode' : 'Night mode',
@@ -676,6 +685,9 @@ const Tracker: React.FC<{
   const { styles } = useThemed(makeStyles);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [stillThere, setStillThere] = useState(false);
+  const [countdown, setCountdown] = useState(STILL_THERE_COUNTDOWN);
+  const promptAtRef = useRef(SESSION_PROMPT_SECONDS);
   const pulse = useRef(new Animated.Value(1)).current;
   const running = startedAt !== null;
 
@@ -702,6 +714,8 @@ const Tracker: React.FC<{
   const handleStart = (): void => {
     haptic.heavy();
     setElapsed(0);
+    promptAtRef.current = SESSION_PROMPT_SECONDS;
+    setStillThere(false);
     setStartedAt(Date.now());
   };
 
@@ -711,7 +725,35 @@ const Tracker: React.FC<{
     haptic.success();
     setStartedAt(null);
     setElapsed(0);
+    setStillThere(false);
     onFinish({ elapsedSeconds: seconds, amountEarned: earningsFor(seconds, hourlyWage) });
+  };
+
+  // Netflix-style guard: after 40 minutes ask "still there?"; without an
+  // answer within the countdown, finish the session automatically.
+  useEffect(() => {
+    if (!running || stillThere || elapsed < promptAtRef.current) return;
+    setCountdown(STILL_THERE_COUNTDOWN);
+    setStillThere(true);
+    haptic.heavy();
+    notifyStillThere();
+  }, [elapsed, running, stillThere]);
+
+  useEffect(() => {
+    if (!stillThere) return undefined;
+    if (countdown <= 0) {
+      handleFinish();
+      return undefined;
+    }
+    const id = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stillThere, countdown]);
+
+  const keepGoing = (): void => {
+    haptic.light();
+    promptAtRef.current += SESSION_PROMPT_SECONDS; // ask again in another 40m
+    setStillThere(false);
   };
 
   return (
@@ -742,6 +784,24 @@ const Tracker: React.FC<{
       >
         <Text style={styles.bigButtonText}>{running ? 'Finish 🏁' : 'Start Session 🚀'}</Text>
       </TouchableOpacity>
+
+      <Modal visible={stillThere} transparent animationType="fade" onRequestClose={keepGoing}>
+        <View style={styles.stillBackdrop}>
+          <View style={styles.stillCard}>
+            <Text style={styles.modalEmoji}>👀</Text>
+            <Text style={styles.modalTitle}>Still blooping?</Text>
+            <Text style={styles.modalSubtitle}>
+              40 minutes in — finishing automatically in {countdown}s
+            </Text>
+            <TouchableOpacity style={styles.primaryButton} activeOpacity={0.85} onPress={keepGoing}>
+              <Text style={styles.primaryButtonText}>Still here! Keep counting 💪</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.stillFinish} activeOpacity={0.8} onPress={handleFinish}>
+              <Text style={styles.stillFinishText}>Finish now 🏁</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 };
@@ -932,6 +992,7 @@ const MainScreen: React.FC<MainProps> = ({
       <StatsScreen visible={sheet === 'stats'} stats={stats} daily={daily} onClose={closeSheet} />
       <FriendsScreen visible={sheet === 'friends'} stats={stats} onClose={closeSheet} />
       <ReminderScreen visible={sheet === 'reminder'} onClose={closeSheet} />
+      <SettingsScreen visible={sheet === 'settings'} onClose={closeSheet} />
 
       <Confetti burstKey={confettiKey} />
     </View>
@@ -942,11 +1003,73 @@ const MainScreen: React.FC<MainProps> = ({
 /*                                   App                                       */
 /* -------------------------------------------------------------------------- */
 
+/** Last-resort guard: a JS crash shows this screen instead of killing the app. */
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error): { error: Error } {
+    return { error };
+  }
+
+  render(): React.ReactNode {
+    if (this.state.error) {
+      return (
+        <View style={boundaryStyles.root}>
+          <Text style={boundaryStyles.emoji}>🧻💥</Text>
+          <Text style={boundaryStyles.title}>bloop hit a clog</Text>
+          <Text style={boundaryStyles.message}>{String(this.state.error)}</Text>
+          <TouchableOpacity
+            style={boundaryStyles.button}
+            onPress={() => this.setState({ error: null })}
+          >
+            <Text style={boundaryStyles.buttonText}>Try again</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const boundaryStyles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: '#FDF3E3',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  emoji: { fontSize: 44 },
+  title: { fontSize: 24, fontWeight: '800', color: '#1B1511', marginTop: 8 },
+  message: {
+    fontSize: 13,
+    color: '#8A7B6D',
+    textAlign: 'center',
+    marginTop: 10,
+    fontFamily: 'Courier',
+  },
+  button: {
+    marginTop: 20,
+    backgroundColor: '#F4772E',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    borderWidth: 3,
+    borderColor: '#1B1511',
+  },
+  buttonText: { color: '#FFFDF8', fontSize: 16, fontWeight: '800' },
+});
+
 export default function App(): React.JSX.Element {
   return (
-    <ThemeProvider>
-      <AppRoot />
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <AppRoot />
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
 
@@ -1382,6 +1505,18 @@ const makeStyles = (COLORS: ThemeColors) => {
     backgroundColor: COLORS.hairline,
     marginBottom: SPACING.lg,
   },
+  stillBackdrop: { flex: 1, backgroundColor: COLORS.backdrop, justifyContent: 'center' },
+  stillCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 26,
+    marginHorizontal: SPACING.lg,
+    padding: SPACING.lg,
+    alignItems: 'center',
+    alignSelf: 'center',
+    ...STICKER,
+  },
+  stillFinish: { paddingVertical: SPACING.sm, marginTop: SPACING.xs },
+  stillFinishText: { fontSize: 15, fontWeight: '700', color: COLORS.subtle },
   modalEmoji: { fontSize: 48 },
   modalTitle: { fontSize: 26, fontWeight: '800', color: COLORS.ink, marginTop: SPACING.sm },
   modalSubtitle: { fontSize: 15, color: COLORS.subtle, marginTop: 4 },

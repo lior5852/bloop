@@ -37,6 +37,7 @@ import {
   parseJSON,
   STORAGE_KEYS,
   type LifetimeStats,
+  buildLeaderboard,
 } from './core';
 
 const REPORT_EMAIL = 'lior5852@gmail.com';
@@ -182,14 +183,17 @@ const FriendsScreen: React.FC<Props> = ({ visible, stats, onClose }) => {
 
   // friends arrive already sorted (desc) from the server, so "me" is placed
   // with one O(F) insertion instead of re-sorting O(F log F) every render.
-  const leaderboard = useMemo((): Array<FriendProfile & { me?: boolean }> => {
-    if (!username) return [];
-    const rows: Array<FriendProfile & { me?: boolean }> = friends.filter((f) => !blocked.has(f.id));
-    const me = { id: 'me', username, totalEarned: stats.totalEarned, totalSeconds: stats.totalSeconds, me: true };
-    const at = rows.findIndex((f) => f.totalEarned < me.totalEarned);
-    rows.splice(at === -1 ? rows.length : at, 0, me);
-    return rows;
-  }, [friends, blocked, username, stats.totalEarned, stats.totalSeconds]);
+  const leaderboard = useMemo(
+    () =>
+      buildLeaderboard(
+        username
+          ? { id: 'me', username, totalEarned: stats.totalEarned, totalSeconds: stats.totalSeconds }
+          : null,
+        friends,
+        [...blocked],
+      ),
+    [friends, blocked, username, stats.totalEarned, stats.totalSeconds],
+  );
 
   return (
     <Modal

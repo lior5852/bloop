@@ -20,12 +20,14 @@ export const GOOGLE_IOS_CLIENT_ID = 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.c
 export const GOOGLE_WEB_CLIENT_ID = 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com';
 
 /**
- * Show the Apple/Google sign-in buttons. Keep false until the OAuth providers
- * are actually configured (Google Cloud + Apple capability + Supabase
- * providers), otherwise App Review sees non-working buttons.
- * Friends/leaderboard do NOT need this — they use anonymous sign-in.
+ * Per-provider sign-in button flags. Enable only once the provider is fully
+ * configured end-to-end, otherwise App Review sees non-working buttons.
+ * Apple: capability on the App ID ✓ + Supabase Apple provider ✓ (2026-10-09).
+ * Google: still needs Google Cloud OAuth clients + Supabase provider.
  */
-export const SOCIAL_LOGIN_ENABLED = false;
+export const APPLE_LOGIN_ENABLED = true;
+export const GOOGLE_LOGIN_ENABLED = false;
+export const SOCIAL_LOGIN_ENABLED = APPLE_LOGIN_ENABLED || GOOGLE_LOGIN_ENABLED;
 
 const isPlaceholder = (v: string): boolean =>
   v.startsWith('YOUR') || v.includes('YOUR-PROJECT');

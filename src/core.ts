@@ -47,6 +47,8 @@ export const STORAGE_KEYS = {
   blocked: '@bloop:blockedUsers',
   currency: '@bloop:currency',
   reminder: '@bloop:reminder',
+  notifications: '@bloop:notificationsEnabled',
+  emailOptIn: '@bloop:emailOptIn',
 } as const;
 
 /** Every key we own — "delete account" must wipe all of them. */
@@ -107,6 +109,12 @@ export const makeUser = (
 
 /** Longest session we count (4h) — guards against forgotten timers. */
 export const MAX_SESSION_SECONDS = 4 * 3600;
+
+/** After this long we ask "still there?" (nobody bloops 40+ minutes). */
+export const SESSION_PROMPT_SECONDS = 40 * 60;
+
+/** Seconds the "still there?" prompt waits before auto-finishing. */
+export const STILL_THERE_COUNTDOWN = 10;
 
 /** Money earned for a duration at a given hourly wage. Never negative. */
 export const earningsFor = (seconds: number, hourlyWage: number): number => {
@@ -340,6 +348,42 @@ export const lastDays = (
       agg: store.days[key] ?? emptyDay(),
     };
   });
+
+/* ----------------------------- Leaderboard ------------------------------ */
+
+/** The public shape friends share: username + lifetime totals. */
+export interface PublicProfile {
+  id: string;
+  username: string;
+  totalEarned: number;
+  totalSeconds: number;
+}
+
+export interface LeaderboardEntry extends PublicProfile {
+  me?: boolean;
+}
+
+/**
+ * Merge me + friends into a ranked board: blocked users removed, sorted by
+ * lifetime earnings (ties broken by time, then name for stability).
+ */
+export const buildLeaderboard = (
+  me: PublicProfile | null,
+  friends: readonly PublicProfile[],
+  blocked: readonly string[] = [],
+): LeaderboardEntry[] => {
+  const entries: LeaderboardEntry[] = friends
+    .filter((f) => !blocked.includes(f.id))
+    .map((f) => ({ ...f }));
+  if (me) entries.push({ ...me, me: true });
+  entries.sort(
+    (a, b) =>
+      b.totalEarned - a.totalEarned ||
+      b.totalSeconds - a.totalSeconds ||
+      a.username.localeCompare(b.username),
+  );
+  return entries;
+};
 
 /* ------------------------------ Usernames ------------------------------- */
 

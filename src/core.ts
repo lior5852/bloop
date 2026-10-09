@@ -49,6 +49,7 @@ export const STORAGE_KEYS = {
   reminder: '@bloop:reminder',
   notifications: '@bloop:notificationsEnabled',
   emailOptIn: '@bloop:emailOptIn',
+  onboarded: '@bloop:onboarded',
 } as const;
 
 /** Every key we own — "delete account" must wipe all of them. */

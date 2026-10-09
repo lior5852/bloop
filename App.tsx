@@ -25,6 +25,7 @@ import StatsScreen from './src/StatsScreen';
 import FriendsScreen from './src/FriendsScreen';
 import ReminderScreen from './src/ReminderScreen';
 import SettingsScreen from './src/SettingsScreen';
+import Onboarding from './src/Onboarding';
 import { syncMyStats } from './src/friends';
 import { notifyStillThere } from './src/reminders';
 import { SOCIAL_LOGIN_ENABLED, APPLE_LOGIN_ENABLED, GOOGLE_LOGIN_ENABLED } from './src/config';
@@ -191,6 +192,49 @@ const Mascot: React.FC<{ size?: number }> = ({ size = 46 }) => {
         />
       </View>
     </View>
+  );
+};
+
+/* -------------------------------------------------------------------------- */
+/*                        Sun / Moon theme toggle pill                         */
+/* -------------------------------------------------------------------------- */
+
+const ThemeTogglePill: React.FC = () => {
+  const { colors, isNight, toggle } = useThemed();
+  return (
+    <TouchableOpacity
+      accessibilityLabel={isNight ? 'Switch to day mode' : 'Switch to night mode'}
+      activeOpacity={0.85}
+      onPress={() => {
+        haptic.light();
+        toggle();
+      }}
+      style={{
+        width: 58,
+        height: 30,
+        borderRadius: 999,
+        borderWidth: 2.5,
+        borderColor: colors.ink,
+        backgroundColor: isNight ? colors.peach : colors.hairline,
+        justifyContent: 'center',
+      }}
+    >
+      <Text style={{ position: 'absolute', left: 5, fontSize: 12, opacity: isNight ? 0.35 : 1 }}>☀️</Text>
+      <Text style={{ position: 'absolute', right: 5, fontSize: 12, opacity: isNight ? 1 : 0.35 }}>🌙</Text>
+      <View
+        style={{
+          position: 'absolute',
+          top: 1.5,
+          left: isNight ? 29 : 2,
+          width: 22,
+          height: 22,
+          borderRadius: 11,
+          backgroundColor: colors.primary,
+          borderWidth: 2,
+          borderColor: colors.ink,
+        }}
+      />
+    </TouchableOpacity>
   );
 };
 
@@ -894,16 +938,19 @@ const MainScreen: React.FC<MainProps> = ({
               <Mascot size={40} />
               <Text style={styles.headerTitle}>BLOOP</Text>
             </View>
-            <TouchableOpacity
-              style={styles.menuButton}
-              accessibilityLabel="Open the bloop shop"
-              onPress={() => {
-                haptic.light();
-                Linking.openURL(SHOP_URL).catch(() => {});
-              }}
-            >
-              <Text style={styles.menuIcon}>🛍</Text>
-            </TouchableOpacity>
+            <View style={styles.headerRight}>
+              <ThemeTogglePill />
+              <TouchableOpacity
+                style={styles.menuButton}
+                accessibilityLabel="Open the bloop shop"
+                onPress={() => {
+                  haptic.light();
+                  Linking.openURL(SHOP_URL).catch(() => {});
+                }}
+              >
+                <Text style={styles.menuIcon}>🛍</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           <Text style={styles.greeting}>
@@ -911,15 +958,6 @@ const MainScreen: React.FC<MainProps> = ({
           </Text>
 
           <View style={styles.wageStatsRow}>
-            <TouchableOpacity
-              style={styles.wageStatCard}
-              activeOpacity={0.8}
-              accessibilityLabel="Edit hourly wage"
-              onPress={() => openSheet('wage')}
-            >
-              <Text style={styles.wageStatLabel}>Hourly wage ✏️</Text>
-              <Text style={styles.wageStatValue}>{money(hourlyWage)}</Text>
-            </TouchableOpacity>
             {statCards.slice(1).map((c) => (
               <View key={c.label} style={[styles.wageStatCard, c.mint && styles.mintBg]}>
                 <Text style={styles.wageStatLabel}>{c.label}</Text>
@@ -940,6 +978,21 @@ const MainScreen: React.FC<MainProps> = ({
             <Text style={styles.friendsButtonText}>👥 Add friends · race them to the throne 👑</Text>
           </TouchableOpacity>
 
+          <TouchableOpacity
+            style={styles.wagePill}
+            activeOpacity={0.85}
+            accessibilityLabel="Edit hourly wage"
+            onPress={() => openSheet('wage')}
+          >
+            <View>
+              <Text style={styles.wagePillLabel}>Your hourly wage</Text>
+              <Text style={styles.wagePillValue}>{money(hourlyWage)} / hr</Text>
+            </View>
+            <View style={styles.wagePillEdit}>
+              <Text style={styles.wagePillEditText}>✏️ Edit</Text>
+            </View>
+          </TouchableOpacity>
+
           <Tracker hourlyWage={hourlyWage} onFinish={handleFinish} />
 
           {/* Ad slot placeholder — reserves layout space for a future ad network. */}
@@ -952,7 +1005,10 @@ const MainScreen: React.FC<MainProps> = ({
       <SummaryModal visible={showSummary} result={summary} onClose={() => setShowSummary(false)} />
 
       <Modal visible={sheet === 'wage'} transparent animationType="fade" onRequestClose={closeSheet}>
-        <View style={styles.editBackdrop}>
+        <KeyboardAvoidingView
+          style={styles.editBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
           <View style={styles.editCard}>
             <WageForm
               title="Edit wage"
@@ -966,7 +1022,7 @@ const MainScreen: React.FC<MainProps> = ({
               onCancel={closeSheet}
             />
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Drawer
@@ -1082,6 +1138,7 @@ function AppRoot(): React.JSX.Element {
   const [wallet, setWallet] = useState<Wallet>(emptyWallet);
   const [daily, setDaily] = useState<DailyStore>(emptyDaily);
   const [busy, setBusy] = useState(false);
+  const [showTour, setShowTour] = useState(false);
 
   // One batched read of everything on launch.
   useEffect(() => {
@@ -1091,6 +1148,7 @@ function AppRoot(): React.JSX.Element {
 
         const storedCurrency = map[STORAGE_KEYS.currency];
         if (storedCurrency) setCurrency(storedCurrency);
+        if (map[STORAGE_KEYS.onboarded] !== 'true') setShowTour(true);
 
         setStats(parseJSON(map[STORAGE_KEYS.stats], emptyStats()));
         setWallet(parseJSON(map[STORAGE_KEYS.wallet], emptyWallet()));
@@ -1249,6 +1307,15 @@ function AppRoot(): React.JSX.Element {
           />
         </SafeAreaView>
       )}
+      {screen === 'main' && (
+        <Onboarding
+          visible={showTour}
+          onDone={() => {
+            setShowTour(false);
+            save([[STORAGE_KEYS.onboarded, 'true']]);
+          }}
+        />
+      )}
       {screen === 'main' && user && wage !== null && (
         <MainScreen
           user={user}
@@ -1399,6 +1466,29 @@ const makeStyles = (COLORS: ThemeColors) => {
   menuIcon: { fontSize: 26, color: COLORS.ink },
   headerTitle: { fontSize: 24, fontWeight: '800', color: COLORS.ink, letterSpacing: 1 },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  wagePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    marginBottom: SPACING.sm,
+    ...STICKER_SM,
+  },
+  wagePillLabel: { fontSize: 11, fontWeight: '700', color: COLORS.subtle, textTransform: 'uppercase', letterSpacing: 0.4 },
+  wagePillValue: { fontSize: 20, fontWeight: '800', color: COLORS.ink, fontVariant: ['tabular-nums'] },
+  wagePillEdit: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderWidth: 2.5,
+    borderColor: COLORS.ink,
+  },
+  wagePillEditText: { fontSize: 13, fontWeight: '800', color: COLORS.white },
   friendsButton: {
     backgroundColor: COLORS.accent,
     borderRadius: 14,
@@ -1532,12 +1622,7 @@ const makeStyles = (COLORS: ThemeColors) => {
   statValue: { fontSize: 30, fontWeight: '800', color: COLORS.ink, fontVariant: ['tabular-nums'] },
 
   /* Edit wage modal */
-  editBackdrop: {
-    flex: 1,
-    backgroundColor: COLORS.backdrop,
-    justifyContent: 'center',
-    paddingHorizontal: SPACING.lg,
-  },
+  editBackdrop: { flex: 1, backgroundColor: COLORS.backdrop, justifyContent: 'center', paddingHorizontal: SPACING.lg, paddingBottom: 40 },
   editCard: {
     backgroundColor: COLORS.background,
     borderRadius: 28,
